@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface UserRecord {
@@ -16,22 +17,52 @@ export class UserRepository {
     return this.prisma.user.findUnique({ where: { username } });
   }
 
-  create(username: string, passwordHash: string): Promise<UserRecord> {
-    return this.prisma.user.create({ data: { username, passwordHash } });
+  async create(username: string, passwordHash: string): Promise<UserRecord> {
+    try {
+      return await this.prisma.user.create({ data: { username, passwordHash } });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(`User "${username}" already exists`);
+      }
+      throw error;
+    }
   }
 
-  updatePasswordHash(
+  async updatePasswordHash(
     username: string,
     passwordHash: string,
   ): Promise<UserRecord> {
-    return this.prisma.user.update({
-      where: { username },
-      data: { passwordHash },
-    });
+    try {
+      return await this.prisma.user.update({
+        where: { username },
+        data: { passwordHash },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException(`User "${username}" not found`);
+      }
+      throw error;
+    }
   }
 
   async delete(username: string): Promise<void> {
-    await this.prisma.user.delete({ where: { username } });
+    try {
+      await this.prisma.user.delete({ where: { username } });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException(`User "${username}" not found`);
+      }
+      throw error;
+    }
   }
 
   list(): Promise<Pick<UserRecord, 'username' | 'createdAt'>[]> {
