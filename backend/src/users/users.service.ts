@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { hashPassword, verifyPassword } from '../auth/password.util';
 
@@ -28,7 +32,10 @@ export class UsersService {
   async resetPassword(username: string, newPassword: string): Promise<void> {
     const user = await this.repo.findByUsername(username);
     if (!user) throw new NotFoundException(`User "${username}" not found`);
-    await this.repo.updatePasswordHash(username, await hashPassword(newPassword));
+    await this.repo.updatePasswordHash(
+      username,
+      await hashPassword(newPassword),
+    );
   }
 
   async deleteUser(username: string): Promise<void> {

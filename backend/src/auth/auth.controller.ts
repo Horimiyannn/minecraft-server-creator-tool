@@ -25,7 +25,10 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ username: string }> {
-    const user = await this.auth.validateCredentials(dto.username, dto.password);
+    const user = await this.auth.validateCredentials(
+      dto.username,
+      dto.password,
+    );
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }

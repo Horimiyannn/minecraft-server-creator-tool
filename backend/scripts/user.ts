@@ -54,19 +54,17 @@ program
     });
   });
 
-program
-  .command('list')
-  .action(async () => {
-    await withUsers(async (users) => {
-      const list = await users.listUsers();
-      if (list.length === 0) {
-        console.log('No users.');
-        return;
-      }
-      for (const u of list) {
-        console.log(`${u.username}\t${u.createdAt.toISOString()}`);
-      }
-    });
+program.command('list').action(async () => {
+  await withUsers(async (users) => {
+    const list = await users.listUsers();
+    if (list.length === 0) {
+      console.log('No users.');
+      return;
+    }
+    for (const u of list) {
+      console.log(`${u.username}\t${u.createdAt.toISOString()}`);
+    }
   });
+});
 
 void program.parseAsync();

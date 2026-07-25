@@ -57,12 +57,12 @@ describe('UserRepository', () => {
       );
       const repo = new UserRepository(prisma);
 
-      await expect(
-        repo.updatePasswordHash('alice', 'newhash'),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        repo.updatePasswordHash('alice', 'newhash'),
-      ).rejects.toThrow(/User "alice" not found/);
+      await expect(repo.updatePasswordHash('alice', 'newhash')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(repo.updatePasswordHash('alice', 'newhash')).rejects.toThrow(
+        /User "alice" not found/,
+      );
     });
 
     it('rethrows other errors unchanged', async () => {
@@ -71,9 +71,9 @@ describe('UserRepository', () => {
       (prisma.user.update as jest.Mock).mockRejectedValue(otherError);
       const repo = new UserRepository(prisma);
 
-      await expect(
-        repo.updatePasswordHash('alice', 'newhash'),
-      ).rejects.toBe(otherError);
+      await expect(repo.updatePasswordHash('alice', 'newhash')).rejects.toBe(
+        otherError,
+      );
     });
   });
 

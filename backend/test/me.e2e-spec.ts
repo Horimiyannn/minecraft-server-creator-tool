@@ -16,7 +16,9 @@ describe('GET /auth/me (e2e)', () => {
     }).compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.user.deleteMany({ where: { username: 'meuser' } });
@@ -37,7 +39,9 @@ describe('GET /auth/me (e2e)', () => {
 
   it('returns username with a valid cookie', async () => {
     const agent = request.agent(app.getHttpServer());
-    await agent.post('/auth/login').send({ username: 'meuser', password: 'pw123' });
+    await agent
+      .post('/auth/login')
+      .send({ username: 'meuser', password: 'pw123' });
     const res = await agent.get('/auth/me');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ username: 'meuser' });

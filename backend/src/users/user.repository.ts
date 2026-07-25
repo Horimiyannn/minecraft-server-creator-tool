@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -19,7 +23,9 @@ export class UserRepository {
 
   async create(username: string, passwordHash: string): Promise<UserRecord> {
     try {
-      return await this.prisma.user.create({ data: { username, passwordHash } });
+      return await this.prisma.user.create({
+        data: { username, passwordHash },
+      });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

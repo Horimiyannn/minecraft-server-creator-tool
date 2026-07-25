@@ -1,5 +1,0 @@
-# Single-package pnpm workspace for the mc-panel backend.
-# The build-script allowlist (pnpm.onlyBuiltDependencies) lives in package.json,
-# required for pnpm 10 to run Prisma's postinstall (engine setup).
-packages:
-  - .
