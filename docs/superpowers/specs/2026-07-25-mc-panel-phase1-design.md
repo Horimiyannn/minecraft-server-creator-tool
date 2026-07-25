@@ -142,9 +142,20 @@ container stdout --> Nest tails logs --> WS --> browser xterm
 - **E2E**: happy path — log in, create a Vanilla server, start it, see console
   output, stop it.
 
-## Open decisions deferred to plan
+## Resolved stack decisions (from spike, 2026-07-25)
 
-- Exact SQLite schema/ORM (Prisma vs TypeORM vs Drizzle).
-- WebSocket transport (socket.io vs native ws via Nest gateway).
-- itzg env mapping table per loader (worked out during implementation).
+- **Package manager**: pnpm (with `pnpm.onlyBuiltDependencies` allowlisting Prisma's postinstall).
+- **ORM**: Prisma 6 + SQLite, CommonJS. DB access isolated behind repository classes
+  (controller → service → repository); only repositories touch `PrismaService`.
+- **TypeScript 5.9 / Nest 11 / CommonJS.** TypeScript 7 and Prisma 7 were rejected for
+  v1: TS7 removed the programmatic compiler API that nest-cli needs (returns in 7.1,
+  ~Oct 2026), and Prisma 7's ESM-only client forces ESM friction. Revisit after TS 7.1.
+- **Env safety**: a shared `verifyEnv()` validates required vars at boot and via a
+  standalone `verify:env` script; the app refuses to start if any are missing.
+
+## Open decisions deferred to later plans
+
+- WebSocket transport (socket.io vs native ws via Nest gateway) — decided in the
+  Console/Metrics plan.
+- itzg env mapping table per loader — worked out in the Provisioning plan.
 ```

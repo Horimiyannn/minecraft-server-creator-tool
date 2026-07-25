@@ -2,47 +2,60 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the Nest.js backend with SQLite persistence and username/password auth (JWT in an httpOnly cookie), where accounts are created only by a server-side CLI script.
+**Goal:** Stand up the Nest.js backend with SQLite persistence and username/password auth (JWT in an httpOnly cookie), where accounts are created only by a server-side CLI script, using a controller → service → repository layering.
 
-**Architecture:** A Nest.js application backed by Prisma + SQLite. A `User` table stores username + bcrypt hash. A standalone CLI script (not an HTTP route) manages accounts. Login issues a JWT set as an httpOnly cookie; a global-capable `JwtAuthGuard` protects routes by reading that cookie.
+**Architecture:** A Nest.js (v11, CommonJS) application backed by Prisma 6 + SQLite. DB access is isolated in repository classes; services hold business logic; controllers are thin HTTP adapters. A `User` table stores username + bcrypt hash. A standalone CLI (run via a Nest application context, so it reuses `UsersService`) manages accounts — there is no HTTP route that creates users. Login issues a JWT set as an httpOnly cookie; a `JwtAuthGuard` protects routes by reading that cookie. Required env vars are validated by a shared `verifyEnv()` used both at boot and by a standalone `verify:env` script.
 
-**Tech Stack:** Node 20+, Nest.js 10, Prisma 5 + SQLite, `@nestjs/jwt`, `bcryptjs`, `cookie-parser`, `commander` (CLI), Jest + supertest (tests).
+**Tech Stack:** Node 20+, pnpm, Nest.js 11, TypeScript 5.9, Prisma 6 + SQLite, `@nestjs/jwt`, `bcryptjs`, `cookie-parser`, `commander` (CLI), Jest + ts-jest + supertest (tests).
 
 ## Global Constraints
 
-- Single Ubuntu host; SQLite for v1 (file at `prisma/dev.db`, path configurable via `DATABASE_URL`).
-- No self-service signup and **no HTTP route that creates users**. Accounts come only from the CLI script.
+- **Package manager: pnpm.** All install/run commands use `pnpm`. Because pnpm blocks dependency build scripts by default, `package.json` must allowlist Prisma's postinstall (see Task 1).
+- **Stack versions are pinned to stable:** TypeScript **5.9.x**, Prisma **6.19.x**, Nest **11.x**. Do NOT use TypeScript 7 or Prisma 7 — TS7 removed the programmatic compiler API that nest-cli requires (returns in 7.1), and Prisma 7's ESM-only client forces ESM friction. This is a deliberate decision recorded during a spike.
+- **Module system: CommonJS** (`tsconfig` `module: commonjs`). Not ESM.
+- Single Ubuntu host; SQLite for v1 (file at `prisma/dev.db`, path from `DATABASE_URL`).
+- **No self-service signup and no HTTP route that creates users.** Accounts come only from the CLI.
 - Auth: username + password only (no email). JWT stored in an **httpOnly** cookie named `mcp_token`.
 - Passwords hashed with `bcryptjs` (pure-JS, no native build). Cost factor 12.
-- `JWT_SECRET` read from environment; app must refuse to boot if it is unset.
+- **Layering rule:** controllers call services; services call repositories; only repositories import/use `PrismaService`. Nothing else touches Prisma directly.
+- Required env vars `DATABASE_URL` and `JWT_SECRET` are validated by a shared `verifyEnv()`; the app refuses to boot if any is missing.
 - Node 20+.
 
 ---
 
-### Task 1: Scaffold Nest app with Prisma, SQLite, config, and health check
+### Task 1: Scaffold Nest 11 + Prisma 6 + SQLite, env verification, and health check
 
 **Files:**
 - Create: `backend/package.json`
+- Create: `backend/pnpm-workspace.yaml` (empty-ish; documents pnpm + build allowlist location)
 - Create: `backend/tsconfig.json`
+- Create: `backend/tsconfig.build.json`
 - Create: `backend/nest-cli.json`
 - Create: `backend/.env.example`
 - Create: `backend/.env`
+- Create: `backend/.gitignore`
 - Create: `backend/prisma/schema.prisma`
-- Create: `backend/src/main.ts`
-- Create: `backend/src/app.module.ts`
+- Create: `backend/src/config/env.ts`
+- Test: `backend/src/config/env.spec.ts`
+- Create: `backend/scripts/verify-env.ts`
 - Create: `backend/src/prisma/prisma.service.ts`
 - Create: `backend/src/prisma/prisma.module.ts`
 - Create: `backend/src/health/health.controller.ts`
-- Test: `backend/test/health.e2e-spec.ts`
+- Create: `backend/src/health/health.module.ts`
+- Create: `backend/src/app.module.ts`
+- Create: `backend/src/main.ts`
+- Create: `backend/jest.config.js`
 - Create: `backend/test/jest-e2e.json`
+- Test: `backend/test/health.e2e-spec.ts`
 
 **Interfaces:**
 - Consumes: nothing (first task).
 - Produces:
-  - `PrismaService` — a Nest injectable extending `PrismaClient`, connects on module init.
+  - `verifyEnv(env?: NodeJS.ProcessEnv): void` in `config/env.ts` — throws `Error` listing any missing required vars. `REQUIRED_ENV: readonly ['DATABASE_URL', 'JWT_SECRET']`.
+  - `PrismaService extends PrismaClient` (Nest injectable, connects on module init).
   - `PrismaModule` — global module exporting `PrismaService`.
-  - Prisma `User` model: `{ id: Int @id @default(autoincrement()), username: String @unique, passwordHash: String, createdAt: DateTime @default(now()) }`.
-  - Booted Nest app with `cookie-parser` enabled and a `GET /health` route returning `{ status: 'ok' }`.
+  - Prisma `User` model: `{ id Int @id @default(autoincrement()), username String @unique, passwordHash String, createdAt DateTime @default(now()) }`.
+  - Booted Nest app with `cookie-parser`, global `ValidationPipe`, and `GET /health` → `{ status: 'ok' }`.
 
 - [ ] **Step 1: Create `backend/package.json`**
 
@@ -51,10 +64,12 @@
   "name": "mc-panel-backend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.12.0",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "verify:env": "ts-node scripts/verify-env.ts",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
@@ -62,36 +77,43 @@
     "user": "ts-node scripts/user.ts"
   },
   "dependencies": {
-    "@nestjs/common": "^10.3.0",
-    "@nestjs/config": "^3.1.1",
-    "@nestjs/core": "^10.3.0",
-    "@nestjs/jwt": "^10.2.0",
-    "@nestjs/platform-express": "^10.3.0",
-    "@prisma/client": "^5.9.0",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/platform-express": "^11.1.28",
+    "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
-    "commander": "^11.1.0",
-    "cookie-parser": "^1.4.6",
-    "reflect-metadata": "^0.2.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "commander": "^12.1.0",
+    "cookie-parser": "^1.4.7",
+    "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
-    "@nestjs/cli": "^10.3.0",
-    "@nestjs/testing": "^10.3.0",
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/testing": "^11.1.28",
     "@types/bcryptjs": "^2.4.6",
-    "@types/cookie-parser": "^1.4.6",
-    "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.11",
-    "@types/node": "^20.11.0",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.0",
     "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
-    "prisma": "^5.9.0",
-    "supertest": "^6.3.4",
-    "ts-jest": "^29.1.1",
+    "prisma": "^6.19.3",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["prisma", "@prisma/client", "@prisma/engines"]
   }
 }
 ```
+
+Note: `pnpm.onlyBuiltDependencies` allowlists Prisma's postinstall (engine setup); pnpm blocks dependency build scripts otherwise, and Prisma silently fails to generate without it.
 
 - [ ] **Step 2: Create `backend/tsconfig.json`**
 
@@ -104,12 +126,13 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
+    "strict": true,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
@@ -118,7 +141,16 @@
 }
 ```
 
-- [ ] **Step 3: Create `backend/nest-cli.json`**
+- [ ] **Step 3: Create `backend/tsconfig.build.json`**
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+}
+```
+
+- [ ] **Step 4: Create `backend/nest-cli.json`**
 
 ```json
 {
@@ -131,17 +163,27 @@
 }
 ```
 
-- [ ] **Step 4: Create `backend/.env.example` and `backend/.env`**
-
-Both files, same contents (the real `.env` is git-ignored):
+- [ ] **Step 5: Create `backend/.env.example` and `backend/.env`** (identical contents; `.env` is git-ignored)
 
 ```
 DATABASE_URL="file:./dev.db"
 JWT_SECRET="change-me-to-a-long-random-string"
 NODE_ENV="development"
+PORT="3001"
 ```
 
-- [ ] **Step 5: Create `backend/prisma/schema.prisma`**
+- [ ] **Step 6: Create `backend/.gitignore`**
+
+```
+node_modules/
+dist/
+.env
+prisma/dev.db
+prisma/dev.db-journal
+*.log
+```
+
+- [ ] **Step 7: Create `backend/prisma/schema.prisma`**
 
 ```prisma
 generator client {
@@ -161,16 +203,88 @@ model User {
 }
 ```
 
-- [ ] **Step 6: Install deps and run the first migration**
+- [ ] **Step 8: Install deps and run the first migration**
 
 Run (from `backend/`):
 ```bash
-npm install
-npx prisma migrate dev --name init
+pnpm install
+pnpm exec prisma migrate dev --name init
 ```
-Expected: `prisma/migrations/*_init/migration.sql` created; `dev.db` created; `@prisma/client` generated with no errors.
+Expected: `prisma/migrations/*_init/migration.sql` created; `dev.db` created; `@prisma/client` generated with no errors. If generation is skipped, confirm the `pnpm.onlyBuiltDependencies` allowlist from Step 1 is present, then run `pnpm approve-builds` and re-run `pnpm install`.
 
-- [ ] **Step 7: Create `backend/src/prisma/prisma.service.ts`**
+- [ ] **Step 9: Write the failing unit test `backend/src/config/env.spec.ts`**
+
+```typescript
+import { verifyEnv } from './env';
+
+describe('verifyEnv', () => {
+  it('passes when all required vars are present', () => {
+    expect(() =>
+      verifyEnv({ DATABASE_URL: 'file:./x.db', JWT_SECRET: 's' } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+  });
+
+  it('throws listing every missing var', () => {
+    expect(() => verifyEnv({} as NodeJS.ProcessEnv)).toThrow(
+      /DATABASE_URL.*JWT_SECRET/,
+    );
+  });
+});
+```
+
+- [ ] **Step 10: Run the test to verify it fails**
+
+Run (from `backend/`):
+```bash
+pnpm test -- env
+```
+Expected: FAIL — cannot find module `./env`.
+
+- [ ] **Step 11: Create `backend/src/config/env.ts`**
+
+```typescript
+export const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
+
+export function verifyEnv(env: NodeJS.ProcessEnv = process.env): void {
+  const missing = REQUIRED_ENV.filter((key) => !env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  }
+}
+```
+
+- [ ] **Step 12: Run the test to verify it passes**
+
+Run (from `backend/`):
+```bash
+pnpm test -- env
+```
+Expected: PASS, 2 tests.
+
+- [ ] **Step 13: Create `backend/scripts/verify-env.ts`**
+
+```typescript
+import { verifyEnv } from '../src/config/env';
+
+try {
+  verifyEnv();
+  console.log('Env OK');
+} catch (err) {
+  console.error((err as Error).message);
+  process.exit(1);
+}
+```
+
+- [ ] **Step 14: Manually verify the env script**
+
+Run (from `backend/`):
+```bash
+JWT_SECRET= DATABASE_URL= pnpm run verify:env   # expect error + exit 1
+pnpm run verify:env                              # with .env present, expect "Env OK"
+```
+Note: `ts-node` does not auto-load `.env`; the second command relies on the shell having the vars, or run `env $(cat .env | xargs) pnpm run verify:env`. (The Nest app itself loads `.env` via `ConfigModule` in Step 18.)
+
+- [ ] **Step 15: Create `backend/src/prisma/prisma.service.ts`**
 
 ```typescript
 import { Injectable, OnModuleInit } from '@nestjs/common';
@@ -184,7 +298,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
 }
 ```
 
-- [ ] **Step 8: Create `backend/src/prisma/prisma.module.ts`**
+- [ ] **Step 16: Create `backend/src/prisma/prisma.module.ts`**
 
 ```typescript
 import { Global, Module } from '@nestjs/common';
@@ -198,8 +312,9 @@ import { PrismaService } from './prisma.service';
 export class PrismaModule {}
 ```
 
-- [ ] **Step 9: Create `backend/src/health/health.controller.ts`**
+- [ ] **Step 17: Create `backend/src/health/health.controller.ts` and `health.module.ts`**
 
+`health.controller.ts`:
 ```typescript
 import { Controller, Get } from '@nestjs/common';
 
@@ -212,36 +327,46 @@ export class HealthController {
 }
 ```
 
-- [ ] **Step 10: Create `backend/src/app.module.ts`**
+`health.module.ts`:
+```typescript
+import { Module } from '@nestjs/common';
+import { HealthController } from './health.controller';
+
+@Module({
+  controllers: [HealthController],
+})
+export class HealthModule {}
+```
+
+- [ ] **Step 18: Create `backend/src/app.module.ts`**
 
 ```typescript
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
-import { HealthController } from './health/health.controller';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    HealthModule,
   ],
-  controllers: [HealthController],
 })
 export class AppModule {}
 ```
 
-- [ ] **Step 11: Create `backend/src/main.ts`**
+- [ ] **Step 19: Create `backend/src/main.ts`**
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { verifyEnv } from './config/env';
 
 async function bootstrap(): Promise<void> {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not set; refusing to start.');
-  }
+  verifyEnv();
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -250,7 +375,19 @@ async function bootstrap(): Promise<void> {
 void bootstrap();
 ```
 
-- [ ] **Step 12: Create `backend/test/jest-e2e.json`**
+- [ ] **Step 20: Create `backend/jest.config.js` (unit tests, colocated in `src`)**
+
+```javascript
+module.exports = {
+  moduleFileExtensions: ['js', 'json', 'ts'],
+  rootDir: 'src',
+  testRegex: '.*\\.spec\\.ts$',
+  transform: { '^.+\\.(t|j)s$': 'ts-jest' },
+  testEnvironment: 'node',
+};
+```
+
+- [ ] **Step 21: Create `backend/test/jest-e2e.json`**
 
 ```json
 {
@@ -262,7 +399,7 @@ void bootstrap();
 }
 ```
 
-- [ ] **Step 13: Write the failing e2e test `backend/test/health.e2e-spec.ts`**
+- [ ] **Step 22: Write the e2e test `backend/test/health.e2e-spec.ts`**
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -293,65 +430,42 @@ describe('Health (e2e)', () => {
 });
 ```
 
-- [ ] **Step 14: Run the test to verify it passes**
+- [ ] **Step 23: Run the e2e test**
 
-Run (from `backend/`, with `JWT_SECRET` present in `.env`; the test loads `AppModule` which imports `ConfigModule`):
+Run (from `backend/`):
 ```bash
-JWT_SECRET=test-secret npm run test:e2e -- health
+pnpm run test:e2e -- health
 ```
-Expected: PASS, 1 test.
+Expected: PASS, 1 test. (DB must be migrated from Step 8.)
 
-- [ ] **Step 15: Create `backend/.gitignore` and commit**
+- [ ] **Step 24: Commit**
 
-Create `backend/.gitignore`:
-```
-node_modules/
-dist/
-.env
-prisma/dev.db
-prisma/dev.db-journal
-*.log
-```
-
-Then:
 ```bash
-git add backend/package.json backend/tsconfig.json backend/nest-cli.json \
-  backend/.env.example backend/.gitignore backend/prisma/schema.prisma \
-  backend/prisma/migrations backend/src backend/test
-git commit -m "feat(backend): scaffold Nest + Prisma + SQLite with health check"
+git add backend/
+git commit -m "feat(backend): scaffold Nest 11 + Prisma 6 + SQLite, env verify, health"
 ```
 
 ---
 
-### Task 2: User account CLI script (create / reset-password / delete / list)
+### Task 2: Users domain — repository + service + password util
 
 **Files:**
 - Create: `backend/src/auth/password.util.ts`
-- Create: `backend/scripts/user.ts`
-- Test: `backend/test/password.util.spec.ts`
-- Create: `backend/jest.config.js`
+- Test: `backend/src/auth/password.util.spec.ts`
+- Create: `backend/src/users/user.repository.ts`
+- Create: `backend/src/users/users.service.ts`
+- Create: `backend/src/users/users.module.ts`
+- Test: `backend/src/users/users.service.spec.ts`
 
 **Interfaces:**
-- Consumes: Prisma `User` model (Task 1).
+- Consumes: `PrismaService` (Task 1).
 - Produces:
-  - `hashPassword(plain: string): Promise<string>` and `verifyPassword(plain: string, hash: string): Promise<boolean>` in `password.util.ts` (used by Task 3).
-  - CLI: `npm run user -- create <username> <password>`, `... reset <username> <newPassword>`, `... delete <username>`, `... list`.
+  - `hashPassword(plain: string): Promise<string>`, `verifyPassword(plain: string, hash: string): Promise<boolean>` in `password.util.ts`.
+  - `UserRepository` with: `findByUsername(username: string): Promise<UserRecord | null>`, `create(username: string, passwordHash: string): Promise<UserRecord>`, `updatePasswordHash(username: string, passwordHash: string): Promise<UserRecord>`, `delete(username: string): Promise<void>`, `list(): Promise<Pick<UserRecord, 'username' | 'createdAt'>[]>`. `UserRecord = { id: number; username: string; passwordHash: string; createdAt: Date }`.
+  - `UsersService` with: `createUser(username: string, plainPassword: string): Promise<void>` (throws if username exists), `validateCredentials(username: string, plainPassword: string): Promise<{ id: number; username: string } | null>`, `resetPassword(username: string, newPassword: string): Promise<void>` (throws if not found), `deleteUser(username: string): Promise<void>` (throws if not found), `listUsers(): Promise<{ username: string; createdAt: Date }[]>`.
+  - `UsersModule` exporting `UsersService` and `UserRepository`.
 
-- [ ] **Step 1: Create `backend/jest.config.js` for unit tests**
-
-```javascript
-module.exports = {
-  moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: 'src',
-  testRegex: '.*\\.spec\\.ts$',
-  transform: { '^.+\\.(t|j)s$': 'ts-jest' },
-  testEnvironment: 'node',
-};
-```
-
-Note: this points `rootDir` at `src`, so the unit test lives beside the code it tests. Move the test file accordingly in Step 2.
-
-- [ ] **Step 2: Write the failing unit test `backend/src/auth/password.util.spec.ts`**
+- [ ] **Step 1: Write the failing test `backend/src/auth/password.util.spec.ts`**
 
 ```typescript
 import { hashPassword, verifyPassword } from './password.util';
@@ -370,15 +484,12 @@ describe('password.util', () => {
 });
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [ ] **Step 2: Run to verify it fails**
 
-Run (from `backend/`):
-```bash
-npm test -- password.util
-```
+Run: `pnpm test -- password.util`
 Expected: FAIL — cannot find module `./password.util`.
 
-- [ ] **Step 4: Create `backend/src/auth/password.util.ts`**
+- [ ] **Step 3: Create `backend/src/auth/password.util.ts`**
 
 ```typescript
 import * as bcrypt from 'bcryptjs';
@@ -397,24 +508,245 @@ export async function verifyPassword(
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 4: Run to verify it passes**
 
-Run (from `backend/`):
-```bash
-npm test -- password.util
-```
+Run: `pnpm test -- password.util`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 6: Create the CLI `backend/scripts/user.ts`**
+- [ ] **Step 5: Create `backend/src/users/user.repository.ts`**
 
 ```typescript
-import { PrismaClient } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+
+export interface UserRecord {
+  id: number;
+  username: string;
+  passwordHash: string;
+  createdAt: Date;
+}
+
+@Injectable()
+export class UserRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  findByUsername(username: string): Promise<UserRecord | null> {
+    return this.prisma.user.findUnique({ where: { username } });
+  }
+
+  create(username: string, passwordHash: string): Promise<UserRecord> {
+    return this.prisma.user.create({ data: { username, passwordHash } });
+  }
+
+  updatePasswordHash(
+    username: string,
+    passwordHash: string,
+  ): Promise<UserRecord> {
+    return this.prisma.user.update({
+      where: { username },
+      data: { passwordHash },
+    });
+  }
+
+  async delete(username: string): Promise<void> {
+    await this.prisma.user.delete({ where: { username } });
+  }
+
+  list(): Promise<Pick<UserRecord, 'username' | 'createdAt'>[]> {
+    return this.prisma.user.findMany({
+      select: { username: true, createdAt: true },
+      orderBy: { username: 'asc' },
+    });
+  }
+}
+```
+
+- [ ] **Step 6: Write the failing test `backend/src/users/users.service.spec.ts`** (repository mocked — pure business-logic test)
+
+```typescript
+import { UsersService } from './users.service';
+import { UserRepository, UserRecord } from './user.repository';
+import { hashPassword } from '../auth/password.util';
+
+function makeRepoMock(): jest.Mocked<UserRepository> {
+  return {
+    findByUsername: jest.fn(),
+    create: jest.fn(),
+    updatePasswordHash: jest.fn(),
+    delete: jest.fn(),
+    list: jest.fn(),
+  } as unknown as jest.Mocked<UserRepository>;
+}
+
+describe('UsersService', () => {
+  it('createUser throws when username already exists', async () => {
+    const repo = makeRepoMock();
+    repo.findByUsername.mockResolvedValue({ id: 1 } as UserRecord);
+    const svc = new UsersService(repo);
+    await expect(svc.createUser('alice', 'pw')).rejects.toThrow(/exists/);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('createUser stores a bcrypt hash, not the plaintext', async () => {
+    const repo = makeRepoMock();
+    repo.findByUsername.mockResolvedValue(null);
+    const svc = new UsersService(repo);
+    await svc.createUser('alice', 'pw');
+    const [, storedHash] = repo.create.mock.calls[0];
+    expect(storedHash).not.toEqual('pw');
+    expect(await verifyStored(storedHash, 'pw')).toBe(true);
+  });
+
+  it('validateCredentials returns null for wrong password', async () => {
+    const repo = makeRepoMock();
+    repo.findByUsername.mockResolvedValue({
+      id: 1,
+      username: 'alice',
+      passwordHash: await hashPassword('right'),
+      createdAt: new Date(),
+    });
+    const svc = new UsersService(repo);
+    expect(await svc.validateCredentials('alice', 'wrong')).toBeNull();
+  });
+
+  it('validateCredentials returns id+username for correct password', async () => {
+    const repo = makeRepoMock();
+    repo.findByUsername.mockResolvedValue({
+      id: 7,
+      username: 'alice',
+      passwordHash: await hashPassword('right'),
+      createdAt: new Date(),
+    });
+    const svc = new UsersService(repo);
+    expect(await svc.validateCredentials('alice', 'right')).toEqual({
+      id: 7,
+      username: 'alice',
+    });
+  });
+});
+
+async function verifyStored(hash: string, plain: string): Promise<boolean> {
+  const { verifyPassword } = await import('../auth/password.util');
+  return verifyPassword(plain, hash);
+}
+```
+
+- [ ] **Step 7: Run to verify it fails**
+
+Run: `pnpm test -- users.service`
+Expected: FAIL — cannot find module `./users.service`.
+
+- [ ] **Step 8: Create `backend/src/users/users.service.ts`**
+
+```typescript
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { UserRepository } from './user.repository';
+import { hashPassword, verifyPassword } from '../auth/password.util';
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly repo: UserRepository) {}
+
+  async createUser(username: string, plainPassword: string): Promise<void> {
+    const existing = await this.repo.findByUsername(username);
+    if (existing) {
+      throw new ConflictException(`User "${username}" already exists`);
+    }
+    await this.repo.create(username, await hashPassword(plainPassword));
+  }
+
+  async validateCredentials(
+    username: string,
+    plainPassword: string,
+  ): Promise<{ id: number; username: string } | null> {
+    const user = await this.repo.findByUsername(username);
+    if (!user) return null;
+    const ok = await verifyPassword(plainPassword, user.passwordHash);
+    if (!ok) return null;
+    return { id: user.id, username: user.username };
+  }
+
+  async resetPassword(username: string, newPassword: string): Promise<void> {
+    const user = await this.repo.findByUsername(username);
+    if (!user) throw new NotFoundException(`User "${username}" not found`);
+    await this.repo.updatePasswordHash(username, await hashPassword(newPassword));
+  }
+
+  async deleteUser(username: string): Promise<void> {
+    const user = await this.repo.findByUsername(username);
+    if (!user) throw new NotFoundException(`User "${username}" not found`);
+    await this.repo.delete(username);
+  }
+
+  listUsers(): Promise<{ username: string; createdAt: Date }[]> {
+    return this.repo.list();
+  }
+}
+```
+
+- [ ] **Step 9: Create `backend/src/users/users.module.ts`**
+
+```typescript
+import { Module } from '@nestjs/common';
+import { UsersService } from './users.service';
+import { UserRepository } from './user.repository';
+
+@Module({
+  providers: [UsersService, UserRepository],
+  exports: [UsersService, UserRepository],
+})
+export class UsersModule {}
+```
+
+- [ ] **Step 10: Run to verify it passes**
+
+Run: `pnpm test -- users.service`
+Expected: PASS, 4 tests.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add backend/src/auth/password.util.ts backend/src/auth/password.util.spec.ts \
+  backend/src/users/
+git commit -m "feat(backend): users repository + service + password util"
+```
+
+---
+
+### Task 3: Account CLI (reuses UsersService via a Nest application context)
+
+**Files:**
+- Create: `backend/scripts/user.ts`
+
+**Interfaces:**
+- Consumes: `UsersService` (Task 2), `AppModule` (Task 1).
+- Produces: CLI commands `pnpm run user -- create <username> <password>`, `... reset <username> <newPassword>`, `... delete <username>`, `... list`.
+
+- [ ] **Step 1: Create `backend/scripts/user.ts`**
+
+```typescript
+import { NestFactory } from '@nestjs/core';
 import { Command } from 'commander';
-import { hashPassword } from '../src/auth/password.util';
+import { AppModule } from '../src/app.module';
+import { UsersService } from '../src/users/users.service';
 
-const prisma = new PrismaClient();
+async function withUsers<T>(
+  fn: (users: UsersService) => Promise<T>,
+): Promise<void> {
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: false,
+  });
+  try {
+    await fn(app.get(UsersService));
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exitCode = 1;
+  } finally {
+    await app.close();
+  }
+}
+
 const program = new Command();
-
 program.name('user').description('Manage MC panel accounts');
 
 program
@@ -422,16 +754,10 @@ program
   .argument('<username>')
   .argument('<password>')
   .action(async (username: string, password: string) => {
-    const existing = await prisma.user.findUnique({ where: { username } });
-    if (existing) {
-      console.error(`User "${username}" already exists.`);
-      process.exitCode = 1;
-      return;
-    }
-    await prisma.user.create({
-      data: { username, passwordHash: await hashPassword(password) },
+    await withUsers(async (users) => {
+      await users.createUser(username, password);
+      console.log(`Created user "${username}".`);
     });
-    console.log(`Created user "${username}".`);
   });
 
 program
@@ -439,83 +765,63 @@ program
   .argument('<username>')
   .argument('<newPassword>')
   .action(async (username: string, newPassword: string) => {
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) {
-      console.error(`User "${username}" not found.`);
-      process.exitCode = 1;
-      return;
-    }
-    await prisma.user.update({
-      where: { username },
-      data: { passwordHash: await hashPassword(newPassword) },
+    await withUsers(async (users) => {
+      await users.resetPassword(username, newPassword);
+      console.log(`Reset password for "${username}".`);
     });
-    console.log(`Reset password for "${username}".`);
   });
 
 program
   .command('delete')
   .argument('<username>')
   .action(async (username: string) => {
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) {
-      console.error(`User "${username}" not found.`);
-      process.exitCode = 1;
-      return;
-    }
-    await prisma.user.delete({ where: { username } });
-    console.log(`Deleted user "${username}".`);
+    await withUsers(async (users) => {
+      await users.deleteUser(username);
+      console.log(`Deleted user "${username}".`);
+    });
   });
 
 program
   .command('list')
   .action(async () => {
-    const users = await prisma.user.findMany({
-      select: { username: true, createdAt: true },
-      orderBy: { username: 'asc' },
+    await withUsers(async (users) => {
+      const list = await users.listUsers();
+      if (list.length === 0) {
+        console.log('No users.');
+        return;
+      }
+      for (const u of list) {
+        console.log(`${u.username}\t${u.createdAt.toISOString()}`);
+      }
     });
-    if (users.length === 0) {
-      console.log('No users.');
-      return;
-    }
-    for (const u of users) {
-      console.log(`${u.username}\t${u.createdAt.toISOString()}`);
-    }
   });
 
-program
-  .parseAsync()
-  .then(() => prisma.$disconnect())
-  .catch(async (err) => {
-    console.error(err);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+void program.parseAsync();
 ```
 
-- [ ] **Step 7: Manually verify the CLI end-to-end**
+- [ ] **Step 2: Manually verify the CLI end-to-end**
 
-Run (from `backend/`):
+Run (from `backend/`, with `.env` present):
 ```bash
-npm run user -- create alice s3cret
-npm run user -- list
-npm run user -- create alice again   # expect duplicate error, exit code 1
-npm run user -- reset alice newpass
-npm run user -- delete alice
-npm run user -- list                 # expect "No users."
+pnpm run user -- create alice s3cret
+pnpm run user -- list
+pnpm run user -- create alice again   # expect "already exists", exit code 1
+pnpm run user -- reset alice newpass
+pnpm run user -- delete alice
+pnpm run user -- list                 # expect "No users."
 ```
-Expected: create prints "Created user \"alice\".", duplicate prints error and exits non-zero, reset/delete succeed, final list prints "No users.".
+Expected: create prints success; duplicate prints "already exists" and exits non-zero; reset/delete succeed; final list prints "No users.".
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add backend/jest.config.js backend/src/auth/password.util.ts \
-  backend/src/auth/password.util.spec.ts backend/scripts/user.ts
-git commit -m "feat(backend): user account CLI and password hashing util"
+git add backend/scripts/user.ts
+git commit -m "feat(backend): account CLI reusing UsersService via app context"
 ```
 
 ---
 
-### Task 3: Login endpoint issuing JWT in an httpOnly cookie
+### Task 4: Login endpoint issuing JWT in an httpOnly cookie
 
 **Files:**
 - Create: `backend/src/auth/auth.service.ts`
@@ -526,14 +832,14 @@ git commit -m "feat(backend): user account CLI and password hashing util"
 - Test: `backend/test/auth.e2e-spec.ts`
 
 **Interfaces:**
-- Consumes: `verifyPassword` (Task 2), `PrismaService` (Task 1).
+- Consumes: `UsersService.validateCredentials` (Task 2), `PrismaService` (Task 1).
 - Produces:
-  - `POST /auth/login` with body `{ username: string, password: string }`. On success: sets httpOnly cookie `mcp_token` (a JWT whose payload is `{ sub: userId, username }`) and returns `{ username }`. On failure: `401`.
-  - `POST /auth/logout`: clears the `mcp_token` cookie, returns `{ ok: true }`.
-  - `AuthService.validateUser(username, password): Promise<{ id, username } | null>`.
-  - JWT payload type `{ sub: number; username: string }` (consumed by Task 4's guard).
+  - `POST /auth/login` body `{ username: string, password: string }` → on success sets httpOnly cookie `mcp_token` (JWT payload `{ sub: userId, username }`) and returns `{ username }`; on failure `401`.
+  - `POST /auth/logout` → clears `mcp_token`, returns `{ ok: true }`.
+  - `AuthService.signToken(user: { id: number; username: string }): string`.
+  - JWT payload type `JwtPayload = { sub: number; username: string }` (consumed by Task 5's guard).
 
-- [ ] **Step 1: Create the DTO `backend/src/auth/dto/login.dto.ts`**
+- [ ] **Step 1: Create `backend/src/auth/dto/login.dto.ts`**
 
 ```typescript
 import { IsString, MinLength } from 'class-validator';
@@ -549,18 +855,12 @@ export class LoginDto {
 }
 ```
 
-Note: `class-validator` and `class-transformer` are required by Nest's `ValidationPipe`. Add them:
-```bash
-npm install class-validator class-transformer
-```
-
 - [ ] **Step 2: Create `backend/src/auth/auth.service.ts`**
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../prisma/prisma.service';
-import { verifyPassword } from './password.util';
+import { UsersService } from '../users/users.service';
 
 export interface JwtPayload {
   sub: number;
@@ -570,19 +870,15 @@ export interface JwtPayload {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly users: UsersService,
     private readonly jwt: JwtService,
   ) {}
 
-  async validateUser(
+  validateCredentials(
     username: string,
     password: string,
   ): Promise<{ id: number; username: string } | null> {
-    const user = await this.prisma.user.findUnique({ where: { username } });
-    if (!user) return null;
-    const ok = await verifyPassword(password, user.passwordHash);
-    if (!ok) return null;
-    return { id: user.id, username: user.username };
+    return this.users.validateCredentials(username, password);
   }
 
   signToken(user: { id: number; username: string }): string {
@@ -618,12 +914,11 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ username: string }> {
-    const user = await this.auth.validateUser(dto.username, dto.password);
+    const user = await this.auth.validateCredentials(dto.username, dto.password);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    const token = this.auth.signToken(user);
-    res.cookie(COOKIE_NAME, token, {
+    res.cookie(COOKIE_NAME, this.auth.signToken(user), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
@@ -646,11 +941,13 @@ export class AuthController {
 ```typescript
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { UsersModule } from '../users/users.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 
 @Module({
   imports: [
+    UsersModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
@@ -666,26 +963,26 @@ export class AuthModule {}
 
 - [ ] **Step 5: Register `AuthModule` in `backend/src/app.module.ts`**
 
-Replace the file contents with:
+Replace file contents with:
 ```typescript
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
+import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
-import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    HealthModule,
     AuthModule,
   ],
-  controllers: [HealthController],
 })
 export class AppModule {}
 ```
 
-- [ ] **Step 6: Write the failing e2e test `backend/test/auth.e2e-spec.ts`**
+- [ ] **Step 6: Write the e2e test `backend/test/auth.e2e-spec.ts`**
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -727,7 +1024,7 @@ describe('Auth (e2e)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('accepts correct password and sets httpOnly cookie', async () => {
+  it('accepts correct password and sets an httpOnly cookie', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ username: 'e2euser', password: 'pw123' });
@@ -740,25 +1037,21 @@ describe('Auth (e2e)', () => {
 });
 ```
 
-- [ ] **Step 7: Run the test to verify it passes**
+- [ ] **Step 7: Run the test**
 
-Run (from `backend/`):
-```bash
-JWT_SECRET=test-secret npm run test:e2e -- auth
-```
-Expected: PASS, 2 tests. (Requires the DB migrated from Task 1.)
+Run: `pnpm run test:e2e -- auth`
+Expected: PASS, 2 tests.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/src/auth backend/src/app.module.ts backend/test/auth.e2e-spec.ts \
-  backend/package.json backend/package-lock.json
+git add backend/src/auth backend/src/app.module.ts backend/test/auth.e2e-spec.ts
 git commit -m "feat(backend): login endpoint issuing JWT httpOnly cookie"
 ```
 
 ---
 
-### Task 4: JwtAuthGuard protecting routes, with a /auth/me route
+### Task 5: JwtAuthGuard + CurrentUser decorator + guarded /auth/me
 
 **Files:**
 - Create: `backend/src/auth/jwt-auth.guard.ts`
@@ -767,11 +1060,11 @@ git commit -m "feat(backend): login endpoint issuing JWT httpOnly cookie"
 - Test: `backend/test/me.e2e-spec.ts`
 
 **Interfaces:**
-- Consumes: `JwtPayload` and `AuthService` / `JwtService` (Task 3), cookie `mcp_token`.
+- Consumes: `JwtPayload`, `JwtService` (Task 4), cookie `mcp_token`.
 - Produces:
-  - `JwtAuthGuard` — a Nest `CanActivate` that reads `mcp_token` from the request cookie, verifies it, and attaches `req.user = { sub, username }`; throws `401` otherwise.
-  - `@CurrentUser()` param decorator returning `req.user` typed as `JwtPayload`.
-  - `GET /auth/me` (guarded) returning `{ username }`.
+  - `JwtAuthGuard` — reads `mcp_token`, verifies it, sets `req.user = JwtPayload`; else `401`.
+  - `@CurrentUser()` param decorator returning `JwtPayload`.
+  - `GET /auth/me` (guarded) → `{ username }`.
 
 - [ ] **Step 1: Create `backend/src/auth/jwt-auth.guard.ts`**
 
@@ -822,9 +1115,9 @@ export const CurrentUser = createParamDecorator(
 );
 ```
 
-- [ ] **Step 3: Add the guarded `GET /auth/me` to `backend/src/auth/auth.controller.ts`**
+- [ ] **Step 3: Add guarded `GET /auth/me` to `backend/src/auth/auth.controller.ts`**
 
-Add these imports at the top (merge with existing import block):
+Add to the import block at the top:
 ```typescript
 import { Get, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -832,7 +1125,7 @@ import { CurrentUser } from './current-user.decorator';
 import { JwtPayload } from './auth.service';
 ```
 
-Add this method inside the `AuthController` class:
+Add this method inside `AuthController`:
 ```typescript
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -841,7 +1134,7 @@ Add this method inside the `AuthController` class:
   }
 ```
 
-- [ ] **Step 4: Write the failing e2e test `backend/test/me.e2e-spec.ts`**
+- [ ] **Step 4: Write the e2e test `backend/test/me.e2e-spec.ts`**
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -891,21 +1184,15 @@ describe('GET /auth/me (e2e)', () => {
 });
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 5: Run the test**
 
-Run (from `backend/`):
-```bash
-JWT_SECRET=test-secret npm run test:e2e -- me
-```
+Run: `pnpm run test:e2e -- me`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 6: Run the full test suite**
+- [ ] **Step 6: Run the full suite**
 
-Run (from `backend/`):
-```bash
-JWT_SECRET=test-secret npm test && JWT_SECRET=test-secret npm run test:e2e
-```
-Expected: all unit and e2e tests green.
+Run: `pnpm test && pnpm run test:e2e`
+Expected: all unit + e2e tests green.
 
 - [ ] **Step 7: Commit**
 
@@ -919,6 +1206,7 @@ git commit -m "feat(backend): JwtAuthGuard, CurrentUser decorator, and /auth/me"
 
 ## Self-Review Notes
 
-- **Spec coverage:** username/password (no email) ✓ Task 1 model + Task 3; CLI-only account creation, no HTTP signup ✓ Task 2; JWT httpOnly cookie ✓ Task 3; bcrypt cost 12 ✓ Task 2; refuse boot without `JWT_SECRET` ✓ Task 1 `main.ts`; SQLite ✓ Task 1; guard for protected routes ✓ Task 4. Provisioning/console/metrics/frontend are later plans, intentionally excluded.
-- **Type consistency:** `JwtPayload { sub: number; username: string }` defined in `auth.service.ts` (Task 3), reused by guard and decorator (Task 4). Cookie name `mcp_token` consistent across controller, guard, and tests. `verifyPassword`/`hashPassword` signatures consistent between Task 2 definition and Task 3 usage.
+- **Spec coverage:** username/password, no email ✓ (Task 1 model, Task 4); CLI-only account creation, no HTTP signup ✓ (Task 3, and no create route anywhere); JWT httpOnly cookie ✓ (Task 4); bcrypt cost 12 ✓ (Task 2); refuse boot without required env ✓ (Task 1 `verifyEnv` in `main.ts`); SQLite ✓ (Task 1); guard for protected routes ✓ (Task 5). New requirements honored: **env-verify script** ✓ (Task 1 Step 13) and **controller→service→repository layering** ✓ (Task 2 repository/service, only `UserRepository` touches Prisma). pnpm ✓ (Global Constraints + all commands). Provisioning/console/metrics/frontend are later plans.
+- **Type consistency:** `JwtPayload { sub: number; username: string }` defined in `auth.service.ts` (Task 4), reused by guard + decorator (Task 5). Cookie name `mcp_token` consistent across controller, guard, tests. `validateCredentials` signature identical between `UsersService` (Task 2), `AuthService` (Task 4). `UserRecord` shape consistent between repository and service tests.
+- **Stack guard:** TS 5.9 / Prisma 6 / Nest 11 / CommonJS pinned in Global Constraints, with the rationale from the spike recorded so no one "upgrades" back into the TS7/Prisma7 breakage.
 - **Placeholder scan:** no TBD/TODO; all code shown in full.
