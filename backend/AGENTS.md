@@ -81,12 +81,21 @@ Verify with `pnpm --filter ./backend run verify:env`
 dead-code / duplicate-code analysis live instead of only via the `pnpm fallow`
 pre-push gate. It communicates over stdio.
 
-Per `https://docs.fallow.tools/integrations/mcp` (fetched 2026-07-25), the
-registration is client-config only — no extra install beyond the existing
-`fallow` devDependency. Because `fallow-mcp` is a local devDependency here
-(not a global install), register it through the package manager so binary
-resolution works, e.g. for Claude Code (`.claude/settings.json`, not present
-in this repo yet — add it if you want this wired up):
+Registration is client-config only — no extra install beyond the existing
+`fallow` devDependency. Because `fallow-mcp` is a local devDependency here (not
+a global install), invoke it through the package manager (`pnpm exec`) so the
+local binary resolves.
+
+For **Claude Code**, register a project-scoped MCP server. The simplest way is
+the CLI, which writes the correct file for you:
+
+```bash
+claude mcp add fallow -s project -- pnpm exec fallow-mcp
+```
+
+That creates/updates a project-scoped **`.mcp.json`** at the repo root (this is
+Claude Code's project MCP config — NOT `.claude/settings.json`, which does not
+hold MCP server definitions). The equivalent hand-written `.mcp.json` is:
 
 ```json
 {
@@ -99,19 +108,20 @@ in this repo yet — add it if you want this wired up):
 }
 ```
 
-Notes from the doc:
-
-- Transport is stdio; no auth/flags needed for basic use.
-- Launch from the project root so `pnpm exec` resolves the local binary.
-- An optional `FALLOW_BIN` env var can point at a specific `fallow` binary if
-  you need to override which one the MCP server shells out to.
-- If registering globally instead of per-project, the plain form
-  `{"command": "fallow-mcp"}` works once `fallow-mcp` is on `PATH`.
+Launch/register from the project root so `pnpm exec` resolves the local binary.
+If you instead install `fallow` globally, the plain form
+`{ "command": "fallow-mcp" }` works once `fallow-mcp` is on `PATH`.
 
 Verified locally: `pnpm exec fallow-mcp --help` resolves and runs the binary
-from `node_modules/.bin/fallow-mcp` (it reports a stdio handshake message,
-confirming it's an MCP stdio server, not a general-purpose CLI).
+from `node_modules/.bin/fallow-mcp`.
 
-**TODO**: no `.claude/settings.json` exists in this repo yet — if you want
-`fallow-mcp` actually wired into this project's Claude Code session, create
-that file with the block above rather than assuming it's already active.
+> Provenance note: the exact key/flag names for fallow's own MCP options were
+> reconstructed from a summarized fetch of
+> `https://docs.fallow.tools/integrations/mcp` (2026-07-25), not copied
+> verbatim. The `.mcp.json` shape above is Claude Code's documented format and
+> is reliable; if fallow-specific options don't behave, confirm them against
+> the live doc.
+
+**TODO**: no `.mcp.json` exists in this repo yet — run the `claude mcp add`
+command above (or create the file) if you want `fallow-mcp` wired into this
+project's Claude Code sessions, rather than assuming it's already active.
