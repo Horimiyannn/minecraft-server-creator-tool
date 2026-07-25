@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { verifyEnv } from '../src/config/env';
 
 try {
