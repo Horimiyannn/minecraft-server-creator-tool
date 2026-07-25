@@ -1,4 +1,4 @@
-export const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
+const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
 
 export function verifyEnv(env: NodeJS.ProcessEnv = process.env): void {
   const missing = REQUIRED_ENV.filter((key) => !env[key]);
