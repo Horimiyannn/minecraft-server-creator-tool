@@ -13,3 +13,16 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 }
+
+model Server {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  loader       String
+  version      String
+  ramMb        Int
+  port         Int      @unique
+  rconPassword String
+  containerId  String?
+  status       String   @default("creating")
+  createdAt    DateTime @default(now())
+}

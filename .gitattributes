@@ -1,0 +1,8 @@
+# Normalize text line endings in the repo (LF) on commit.
+* text=auto
+
+# Shell scripts and Husky git hooks MUST be LF, or the shell fails to run
+# them (a trailing CR makes the hook command "not found"). Pin them
+# regardless of core.autocrlf on the checkout machine.
+*.sh text eol=lf
+.husky/** text eol=lf

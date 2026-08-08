@@ -13,6 +13,17 @@ file only adds backend detail on top of that.
 - `prisma/` — `PrismaModule` / `PrismaService` (the Nest wrapper around the
   Prisma client). **This is the only place `PrismaService` may be injected.**
 - `health/` — health-check endpoint.
+- `servers/` — `ServersController` (guarded REST) → `ServersService`
+  (orchestration) → `ServerRepository` (Prisma) + `DockerService` (the ONLY
+  place `dockerode` is imported). `provisioning.ts` holds the pure
+  `toItzgEnv()` loader→env mapper. Each server is one `itzg/minecraft-server`
+  container named `mc-server-<id>`, data bind-mounted at
+  `<MC_DATA_ROOT>/<id>/data`. The RCON password is generated + stored
+  server-side and stripped from every response (`PublicServer`).
+- `versions/` — `VersionsController` (guarded) → `VersionsService`, which
+  fetches upstream manifests (Mojang / PaperMC / Forge / NeoForge) via an
+  injected `HttpFetcher` (token `HTTP_FETCHER`), cached 1h. Parsers live in
+  `fetchers.ts` and are pure/unit-tested.
 - `config/` — `env.ts` (`verifyEnv()` and required env var list).
 - `main.ts` — app bootstrap (`ValidationPipe`, cookie parsing, etc.).
 
@@ -73,6 +84,13 @@ route.
 Required: `DATABASE_URL`, `JWT_SECRET` (see `backend/src/config/env.ts`).
 Verify with `pnpm --filter ./backend run verify:env`
 (`backend/scripts/verify-env.ts`). Same rule as root: never commit `.env`.
+
+Optional (servers): `MC_DATA_ROOT` (default `/srv/mc`) — host root for
+per-server data bind-mounts; `MC_IMAGE` (default `itzg/minecraft-server`).
+The backend needs access to the Docker socket (`/var/run/docker.sock`); run it
+as a user in the `docker` group. Docker-dependent tests are opt-in only —
+nothing in `pnpm test` / `pnpm test:e2e` requires a running daemon
+(`DockerService` is overridden with a fake in `servers.e2e-spec.ts`).
 
 ## fallow MCP
 
