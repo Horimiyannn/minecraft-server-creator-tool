@@ -8,21 +8,24 @@ import { hashPassword, verifyPassword } from '../auth/password.util';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly repo: UserRepository) {}
+  constructor(private readonly userRepository: UserRepository) {}
 
   async createUser(username: string, plainPassword: string): Promise<void> {
-    const existing = await this.repo.findByUsername(username);
+    const existing = await this.userRepository.findByUsername(username);
     if (existing) {
       throw new ConflictException(`User "${username}" already exists`);
     }
-    await this.repo.create(username, await hashPassword(plainPassword));
+    await this.userRepository.create(
+      username,
+      await hashPassword(plainPassword),
+    );
   }
 
   async validateCredentials(
     username: string,
     plainPassword: string,
   ): Promise<{ id: number; username: string } | null> {
-    const user = await this.repo.findByUsername(username);
+    const user = await this.userRepository.findByUsername(username);
     if (!user) return null;
     const ok = await verifyPassword(plainPassword, user.passwordHash);
     if (!ok) return null;
@@ -30,21 +33,21 @@ export class UsersService {
   }
 
   async resetPassword(username: string, newPassword: string): Promise<void> {
-    const user = await this.repo.findByUsername(username);
+    const user = await this.userRepository.findByUsername(username);
     if (!user) throw new NotFoundException(`User "${username}" not found`);
-    await this.repo.updatePasswordHash(
+    await this.userRepository.updatePasswordHash(
       username,
       await hashPassword(newPassword),
     );
   }
 
   async deleteUser(username: string): Promise<void> {
-    const user = await this.repo.findByUsername(username);
+    const user = await this.userRepository.findByUsername(username);
     if (!user) throw new NotFoundException(`User "${username}" not found`);
-    await this.repo.delete(username);
+    await this.userRepository.delete(username);
   }
 
   listUsers(): Promise<{ username: string; createdAt: Date }[]> {
-    return this.repo.list();
+    return this.userRepository.list();
   }
 }

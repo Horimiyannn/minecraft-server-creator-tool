@@ -10,7 +10,7 @@ import { JwtPayload } from './auth.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(private readonly jwtService: JwtService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<Request>();
@@ -19,7 +19,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Not authenticated');
     }
     try {
-      const payload = this.jwt.verify<JwtPayload>(token);
+      const payload = this.jwtService.verify<JwtPayload>(token);
       (req as Request & { user: JwtPayload }).user = payload;
       return true;
     } catch {

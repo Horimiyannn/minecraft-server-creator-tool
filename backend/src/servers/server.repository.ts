@@ -30,11 +30,11 @@ export interface CreateServerData {
 
 @Injectable()
 export class ServerRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prismaService: PrismaService) {}
 
   async create(data: CreateServerData): Promise<ServerRecord> {
     try {
-      return await this.prisma.server.create({ data });
+      return await this.prismaService.server.create({ data });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -50,11 +50,13 @@ export class ServerRepository {
   }
 
   findById(id: string): Promise<ServerRecord | null> {
-    return this.prisma.server.findUnique({ where: { id } });
+    return this.prismaService.server.findUnique({ where: { id } });
   }
 
   list(): Promise<ServerRecord[]> {
-    return this.prisma.server.findMany({ orderBy: { createdAt: 'asc' } });
+    return this.prismaService.server.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   setContainer(
@@ -74,7 +76,7 @@ export class ServerRepository {
     data: Prisma.ServerUpdateInput,
   ): Promise<ServerRecord> {
     try {
-      return await this.prisma.server.update({ where: { id }, data });
+      return await this.prismaService.server.update({ where: { id }, data });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -88,7 +90,7 @@ export class ServerRepository {
 
   async delete(id: string): Promise<void> {
     try {
-      await this.prisma.server.delete({ where: { id } });
+      await this.prismaService.server.delete({ where: { id } });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

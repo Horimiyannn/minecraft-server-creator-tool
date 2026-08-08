@@ -10,19 +10,19 @@ export interface JwtPayload {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly users: UsersService,
-    private readonly jwt: JwtService,
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
   ) {}
 
   validateCredentials(
     username: string,
     password: string,
   ): Promise<{ id: number; username: string } | null> {
-    return this.users.validateCredentials(username, password);
+    return this.usersService.validateCredentials(username, password);
   }
 
   signToken(user: { id: number; username: string }): string {
     const payload: JwtPayload = { sub: user.id, username: user.username };
-    return this.jwt.sign(payload);
+    return this.jwtService.sign(payload);
   }
 }
