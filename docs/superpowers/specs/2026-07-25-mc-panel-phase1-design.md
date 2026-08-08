@@ -61,14 +61,14 @@ Ubuntu host
 
 Each module has one job and is testable in isolation.
 
-| Module | Responsibility | Key deps |
-|---|---|---|
-| **Auth** | Login, JWT issue/verify, user table (username + bcrypt hash). CLI script for account create/reset/delete. No HTTP signup route. | jwt, bcrypt |
-| **Servers** | CRUD server records; lifecycle start/stop/restart; status. | dockerode |
-| **Provisioning** | Map wizard input (loader/version/RAM/port) → itzg env → create container. | dockerode |
-| **Console** | WebSocket gateway. Container logs → browser; browser commands → RCON. | rcon-client, dockerode |
-| **Metrics** | Docker stats (CPU/RAM/disk) + status; push over WS. | dockerode |
-| **Versions** | Fetch available versions per loader from upstream manifests. | http |
+| Module           | Responsibility                                                                                                                  | Key deps               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| **Auth**         | Login, JWT issue/verify, user table (username + bcrypt hash). CLI script for account create/reset/delete. No HTTP signup route. | jwt, bcrypt            |
+| **Servers**      | CRUD server records; lifecycle start/stop/restart; status.                                                                      | dockerode              |
+| **Provisioning** | Map wizard input (loader/version/RAM/port) → itzg env → create container.                                                       | dockerode              |
+| **Console**      | WebSocket gateway. Container logs → browser; browser commands → RCON.                                                           | rcon-client, dockerode |
+| **Metrics**      | Docker stats (CPU/RAM/disk) + status; push over WS.                                                                             | dockerode              |
+| **Versions**     | Fetch available versions per loader from upstream manifests.                                                                    | http                   |
 
 Shared utilities:
 
@@ -80,11 +80,11 @@ Shared utilities:
 
 ## Frontend (Next.js, App Router)
 
-| Screen | Contents |
-|---|---|
-| **Login** | Username + password → JWT httpOnly cookie. No registration link. |
-| **Dashboard** | Server cards: name, loader/version badge, status dot, live CPU/RAM. Start/stop/restart buttons. "New server" button. |
-| **Create wizard** | name → loader → version (live dropdown) → RAM/port → advanced env. |
+| Screen            | Contents                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Login**         | Username + password → JWT httpOnly cookie. No registration link.                                                               |
+| **Dashboard**     | Server cards: name, loader/version badge, status dot, live CPU/RAM. Start/stop/restart buttons. "New server" button.           |
+| **Create wizard** | name → loader → version (live dropdown) → RAM/port → advanced env.                                                             |
 | **Server detail** | Tabs: **Console** (xterm.js + WS + command input), **Metrics** (CPU/RAM/disk, status), **Settings** (RAM, env, delete server). |
 
 - Live data (console, stats) over one WebSocket per open server.
@@ -158,4 +158,7 @@ container stdout --> Nest tails logs --> WS --> browser xterm
 - WebSocket transport (socket.io vs native ws via Nest gateway) — decided in the
   Console/Metrics plan.
 - itzg env mapping table per loader — worked out in the Provisioning plan.
+
+```
+
 ```

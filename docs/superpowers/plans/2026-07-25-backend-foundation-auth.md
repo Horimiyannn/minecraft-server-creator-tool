@@ -26,6 +26,7 @@
 ### Task 1: Scaffold Nest 11 + Prisma 6 + SQLite, env verification, and health check
 
 **Files:**
+
 - Create: `backend/package.json`
 - Create: `backend/pnpm-workspace.yaml` (empty-ish; documents pnpm + build allowlist location)
 - Create: `backend/tsconfig.json`
@@ -49,6 +50,7 @@
 - Test: `backend/test/health.e2e-spec.ts`
 
 **Interfaces:**
+
 - Consumes: nothing (first task).
 - Produces:
   - `verifyEnv(env?: NodeJS.ProcessEnv): void` in `config/env.ts` — throws `Error` listing any missing required vars. `REQUIRED_ENV: readonly ['DATABASE_URL', 'JWT_SECRET']`.
@@ -206,10 +208,12 @@ model User {
 - [ ] **Step 8: Install deps and run the first migration**
 
 Run (from `backend/`):
+
 ```bash
 pnpm install
 pnpm exec prisma migrate dev --name init
 ```
+
 Expected: `prisma/migrations/*_init/migration.sql` created; `dev.db` created; `@prisma/client` generated with no errors. If generation is skipped, confirm the `pnpm.onlyBuiltDependencies` allowlist from Step 1 is present, then run `pnpm approve-builds` and re-run `pnpm install`.
 
 - [ ] **Step 9: Write the failing unit test `backend/src/config/env.spec.ts`**
@@ -220,7 +224,10 @@ import { verifyEnv } from './env';
 describe('verifyEnv', () => {
   it('passes when all required vars are present', () => {
     expect(() =>
-      verifyEnv({ DATABASE_URL: 'file:./x.db', JWT_SECRET: 's' } as NodeJS.ProcessEnv),
+      verifyEnv({
+        DATABASE_URL: 'file:./x.db',
+        JWT_SECRET: 's',
+      } as NodeJS.ProcessEnv),
     ).not.toThrow();
   });
 
@@ -235,9 +242,11 @@ describe('verifyEnv', () => {
 - [ ] **Step 10: Run the test to verify it fails**
 
 Run (from `backend/`):
+
 ```bash
 pnpm test -- env
 ```
+
 Expected: FAIL — cannot find module `./env`.
 
 - [ ] **Step 11: Create `backend/src/config/env.ts`**
@@ -256,9 +265,11 @@ export function verifyEnv(env: NodeJS.ProcessEnv = process.env): void {
 - [ ] **Step 12: Run the test to verify it passes**
 
 Run (from `backend/`):
+
 ```bash
 pnpm test -- env
 ```
+
 Expected: PASS, 2 tests.
 
 - [ ] **Step 13: Create `backend/scripts/verify-env.ts`**
@@ -278,10 +289,12 @@ try {
 - [ ] **Step 14: Manually verify the env script**
 
 Run (from `backend/`):
+
 ```bash
 JWT_SECRET= DATABASE_URL= pnpm run verify:env   # expect error + exit 1
 pnpm run verify:env                              # with .env present, expect "Env OK"
 ```
+
 Note: `ts-node` does not auto-load `.env`; the second command relies on the shell having the vars, or run `env $(cat .env | xargs) pnpm run verify:env`. (The Nest app itself loads `.env` via `ConfigModule` in Step 18.)
 
 - [ ] **Step 15: Create `backend/src/prisma/prisma.service.ts`**
@@ -315,6 +328,7 @@ export class PrismaModule {}
 - [ ] **Step 17: Create `backend/src/health/health.controller.ts` and `health.module.ts`**
 
 `health.controller.ts`:
+
 ```typescript
 import { Controller, Get } from '@nestjs/common';
 
@@ -328,6 +342,7 @@ export class HealthController {
 ```
 
 `health.module.ts`:
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
@@ -433,9 +448,11 @@ describe('Health (e2e)', () => {
 - [ ] **Step 23: Run the e2e test**
 
 Run (from `backend/`):
+
 ```bash
 pnpm run test:e2e -- health
 ```
+
 Expected: PASS, 1 test. (DB must be migrated from Step 8.)
 
 - [ ] **Step 24: Commit**
@@ -450,6 +467,7 @@ git commit -m "feat(backend): scaffold Nest 11 + Prisma 6 + SQLite, env verify, 
 ### Task 2: Users domain — repository + service + password util
 
 **Files:**
+
 - Create: `backend/src/auth/password.util.ts`
 - Test: `backend/src/auth/password.util.spec.ts`
 - Create: `backend/src/users/user.repository.ts`
@@ -458,6 +476,7 @@ git commit -m "feat(backend): scaffold Nest 11 + Prisma 6 + SQLite, env verify, 
 - Test: `backend/src/users/users.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `PrismaService` (Task 1).
 - Produces:
   - `hashPassword(plain: string): Promise<string>`, `verifyPassword(plain: string, hash: string): Promise<boolean>` in `password.util.ts`.
@@ -639,7 +658,11 @@ Expected: FAIL — cannot find module `./users.service`.
 - [ ] **Step 8: Create `backend/src/users/users.service.ts`**
 
 ```typescript
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { hashPassword, verifyPassword } from '../auth/password.util';
 
@@ -669,7 +692,10 @@ export class UsersService {
   async resetPassword(username: string, newPassword: string): Promise<void> {
     const user = await this.repo.findByUsername(username);
     if (!user) throw new NotFoundException(`User "${username}" not found`);
-    await this.repo.updatePasswordHash(username, await hashPassword(newPassword));
+    await this.repo.updatePasswordHash(
+      username,
+      await hashPassword(newPassword),
+    );
   }
 
   async deleteUser(username: string): Promise<void> {
@@ -716,9 +742,11 @@ git commit -m "feat(backend): users repository + service + password util"
 ### Task 3: Account CLI (reuses UsersService via a Nest application context)
 
 **Files:**
+
 - Create: `backend/scripts/user.ts`
 
 **Interfaces:**
+
 - Consumes: `UsersService` (Task 2), `AppModule` (Task 1).
 - Produces: CLI commands `pnpm run user -- create <username> <password>`, `... reset <username> <newPassword>`, `... delete <username>`, `... list`.
 
@@ -781,20 +809,18 @@ program
     });
   });
 
-program
-  .command('list')
-  .action(async () => {
-    await withUsers(async (users) => {
-      const list = await users.listUsers();
-      if (list.length === 0) {
-        console.log('No users.');
-        return;
-      }
-      for (const u of list) {
-        console.log(`${u.username}\t${u.createdAt.toISOString()}`);
-      }
-    });
+program.command('list').action(async () => {
+  await withUsers(async (users) => {
+    const list = await users.listUsers();
+    if (list.length === 0) {
+      console.log('No users.');
+      return;
+    }
+    for (const u of list) {
+      console.log(`${u.username}\t${u.createdAt.toISOString()}`);
+    }
   });
+});
 
 void program.parseAsync();
 ```
@@ -802,6 +828,7 @@ void program.parseAsync();
 - [ ] **Step 2: Manually verify the CLI end-to-end**
 
 Run (from `backend/`, with `.env` present):
+
 ```bash
 pnpm run user -- create alice s3cret
 pnpm run user -- list
@@ -810,6 +837,7 @@ pnpm run user -- reset alice newpass
 pnpm run user -- delete alice
 pnpm run user -- list                 # expect "No users."
 ```
+
 Expected: create prints success; duplicate prints "already exists" and exits non-zero; reset/delete succeed; final list prints "No users.".
 
 - [ ] **Step 3: Commit**
@@ -824,6 +852,7 @@ git commit -m "feat(backend): account CLI reusing UsersService via app context"
 ### Task 4: Login endpoint issuing JWT in an httpOnly cookie
 
 **Files:**
+
 - Create: `backend/src/auth/auth.service.ts`
 - Create: `backend/src/auth/auth.controller.ts`
 - Create: `backend/src/auth/dto/login.dto.ts`
@@ -832,6 +861,7 @@ git commit -m "feat(backend): account CLI reusing UsersService via app context"
 - Test: `backend/test/auth.e2e-spec.ts`
 
 **Interfaces:**
+
 - Consumes: `UsersService.validateCredentials` (Task 2), `PrismaService` (Task 1).
 - Produces:
   - `POST /auth/login` body `{ username: string, password: string }` → on success sets httpOnly cookie `mcp_token` (JWT payload `{ sub: userId, username }`) and returns `{ username }`; on failure `401`.
@@ -914,7 +944,10 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ username: string }> {
-    const user = await this.auth.validateCredentials(dto.username, dto.password);
+    const user = await this.auth.validateCredentials(
+      dto.username,
+      dto.password,
+    );
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -964,6 +997,7 @@ export class AuthModule {}
 - [ ] **Step 5: Register `AuthModule` in `backend/src/app.module.ts`**
 
 Replace file contents with:
+
 ```typescript
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -1003,7 +1037,9 @@ describe('Auth (e2e)', () => {
     }).compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.user.deleteMany({ where: { username: 'e2euser' } });
@@ -1054,12 +1090,14 @@ git commit -m "feat(backend): login endpoint issuing JWT httpOnly cookie"
 ### Task 5: JwtAuthGuard + CurrentUser decorator + guarded /auth/me
 
 **Files:**
+
 - Create: `backend/src/auth/jwt-auth.guard.ts`
 - Create: `backend/src/auth/current-user.decorator.ts`
 - Modify: `backend/src/auth/auth.controller.ts` (add `GET /auth/me`)
 - Test: `backend/test/me.e2e-spec.ts`
 
 **Interfaces:**
+
 - Consumes: `JwtPayload`, `JwtService` (Task 4), cookie `mcp_token`.
 - Produces:
   - `JwtAuthGuard` — reads `mcp_token`, verifies it, sets `req.user = JwtPayload`; else `401`.
@@ -1118,6 +1156,7 @@ export const CurrentUser = createParamDecorator(
 - [ ] **Step 3: Add guarded `GET /auth/me` to `backend/src/auth/auth.controller.ts`**
 
 Add to the import block at the top:
+
 ```typescript
 import { Get, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -1126,6 +1165,7 @@ import { JwtPayload } from './auth.service';
 ```
 
 Add this method inside `AuthController`:
+
 ```typescript
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -1155,7 +1195,9 @@ describe('GET /auth/me (e2e)', () => {
     }).compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.user.deleteMany({ where: { username: 'meuser' } });
@@ -1176,7 +1218,9 @@ describe('GET /auth/me (e2e)', () => {
 
   it('returns username with a valid cookie', async () => {
     const agent = request.agent(app.getHttpServer());
-    await agent.post('/auth/login').send({ username: 'meuser', password: 'pw123' });
+    await agent
+      .post('/auth/login')
+      .send({ username: 'meuser', password: 'pw123' });
     const res = await agent.get('/auth/me');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ username: 'meuser' });
@@ -1210,3 +1254,360 @@ git commit -m "feat(backend): JwtAuthGuard, CurrentUser decorator, and /auth/me"
 - **Type consistency:** `JwtPayload { sub: number; username: string }` defined in `auth.service.ts` (Task 4), reused by guard + decorator (Task 5). Cookie name `mcp_token` consistent across controller, guard, tests. `validateCredentials` signature identical between `UsersService` (Task 2), `AuthService` (Task 4). `UserRecord` shape consistent between repository and service tests.
 - **Stack guard:** TS 5.9 / Prisma 6 / Nest 11 / CommonJS pinned in Global Constraints, with the rationale from the spike recorded so no one "upgrades" back into the TS7/Prisma7 breakage.
 - **Placeholder scan:** no TBD/TODO; all code shown in full.
+
+---
+
+# Repo Tooling & Agentic Docs (added mid-execution)
+
+These tasks were requested after the auth chain and are appended to the same
+branch. They convert the repo into a **pnpm workspace** (root manages
+`backend/` and future `frontend/`), add lint/format/typecheck + git hooks +
+`fallow` (dead-code/dupes) enforcement, and add agent-facing docs. Unlike the
+TDD tasks above, these are **verification-based**: run the tool, observe the
+result. Versions verified 2026-07-25: ESLint 10.8, typescript-eslint 8.65,
+Prettier 3.9, Husky 9.1, lint-staged 17.2, fallow 3.9 (bins `fallow`,
+`fallow-lsp`, `fallow-mcp`).
+
+## Additional Global Constraints
+
+- **Monorepo:** pnpm workspace rooted at the git root (`/ssd/code/mine server`),
+  members `backend` and `frontend` (frontend not created yet). Single lockfile
+  at root.
+- **Jest:** `maxWorkers: 3` (both unit and e2e configs).
+- **Pre-commit hook:** typecheck (`tsc --noEmit`) + ESLint + Prettier (via
+  lint-staged on staged files). Commit blocked on failure.
+- **Pre-push hook:** build + unit tests + e2e tests + `fallow` (dead-code &
+  dupes). Push blocked on failure.
+- Do not weaken hooks to pass (no `--no-verify` in committed scripts). If
+  existing code fails lint/fallow, fix the code.
+
+---
+
+### Task 6: pnpm workspace root + ESLint 10 + Prettier + Jest maxWorkers
+
+**Files:**
+
+- Create: `package.json` (repo root)
+- Create: `pnpm-workspace.yaml` (repo root)
+- Create: `eslint.config.mjs` (repo root)
+- Create: `.prettierrc.json` (repo root)
+- Create: `.prettierignore` (repo root)
+- Modify: `backend/package.json` (add `typecheck` script; drop `packageManager`/lockfile duplication — root owns it)
+- Modify: `backend/jest.config.js` (add `maxWorkers: 3`)
+- Modify: `backend/test/jest-e2e.json` (add `"maxWorkers": 3`)
+- Delete: `backend/pnpm-lock.yaml` (replaced by root lockfile)
+
+**Interfaces:**
+
+- Consumes: existing `backend/` package.
+- Produces: root scripts `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `build` that operate across the workspace / delegate to `backend`.
+
+- [ ] **Step 1: Create repo-root `package.json`**
+
+```json
+{
+  "name": "mc-panel",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm --filter backend typecheck",
+    "test": "pnpm --filter backend test",
+    "test:e2e": "pnpm --filter backend test:e2e",
+    "build": "pnpm --filter backend build",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0"
+  }
+}
+```
+
+Note: the `prepare: husky` script is added now but `husky` is installed in Task 7; `pnpm install` will warn (not fail) about the missing `husky` binary until then. If the warning blocks install in this pnpm version, add the `prepare` script in Task 7 instead and note it.
+
+- [ ] **Step 2: Create repo-root `pnpm-workspace.yaml`**
+
+```yaml
+packages:
+  - backend
+  - frontend
+```
+
+(`frontend` does not exist yet; pnpm tolerates a missing member dir with a warning. If it errors in this pnpm version, list only `backend` and add `frontend` when it's created — note which you did.)
+
+- [ ] **Step 3: Create repo-root `eslint.config.mjs` (flat config, non-type-aware)**
+
+```javascript
+// @ts-check
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import prettier from 'eslint-config-prettier';
+
+export default tseslint.config(
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'backend/src/generated/**',
+      'backend/prisma/migrations/**',
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  prettier,
+);
+```
+
+Rationale: `tseslint.configs.recommended` is syntactic (no `parserOptions.project`), so it runs fast in hooks and needs no per-package tsconfig wiring. Type-aware rules can be added later.
+
+- [ ] **Step 4: Create repo-root `.prettierrc.json`**
+
+```json
+{
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 80
+}
+```
+
+- [ ] **Step 5: Create repo-root `.prettierignore`**
+
+```
+**/dist/**
+**/node_modules/**
+backend/src/generated/**
+backend/prisma/migrations/**
+pnpm-lock.yaml
+```
+
+- [ ] **Step 6: Add `typecheck` to `backend/package.json` scripts**
+
+Add to the `scripts` block: `"typecheck": "tsc --noEmit"`. Remove the `"packageManager"` field from `backend/package.json` (root owns it now). Keep everything else.
+
+- [ ] **Step 7: Set Jest `maxWorkers: 3`**
+
+In `backend/jest.config.js` add `maxWorkers: 3,` to the exported object.
+In `backend/test/jest-e2e.json` add `"maxWorkers": 3` as a top-level key.
+
+- [ ] **Step 8: Convert to a single root lockfile**
+
+Run (from repo root):
+
+```bash
+rm -f backend/pnpm-lock.yaml
+pnpm install
+```
+
+Expected: a single `pnpm-lock.yaml` at root; `backend/node_modules` linked from the workspace store. If pnpm reports the Prisma build script is not approved, run `pnpm approve-builds` (the `backend/package.json` `pnpm.onlyBuiltDependencies` allowlist should already cover it) and re-run.
+
+- [ ] **Step 9: Format and lint the existing code, fixing residual issues**
+
+Run (from repo root):
+
+```bash
+pnpm format
+pnpm lint:fix
+pnpm lint
+```
+
+Expected: `pnpm lint` exits 0. Fix any remaining ESLint errors the autofix could not (e.g. unused vars) by editing the code — do NOT disable rules wholesale to pass. Prettier may reformat many files; that is expected.
+
+- [ ] **Step 10: Verify typecheck and tests still pass**
+
+Run (from repo root):
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+```
+
+Expected: typecheck clean; unit 19+ tests green (now with `maxWorkers: 3`); e2e 5 tests green.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add package.json pnpm-workspace.yaml eslint.config.mjs .prettierrc.json \
+  .prettierignore pnpm-lock.yaml backend/
+git rm --cached backend/pnpm-lock.yaml 2>/dev/null || true
+git commit -m "chore: pnpm workspace root + eslint/prettier + jest maxWorkers:3"
+```
+
+---
+
+### Task 7: Husky v9 hooks (pre-commit + pre-push) with lint-staged and fallow
+
+**Files:**
+
+- Modify: `package.json` (root — add devDeps husky, lint-staged, fallow; add `fallow` script)
+- Create: `.husky/pre-commit`
+- Create: `.husky/pre-push`
+- Create: `.lintstagedrc.json` (root)
+- Create: `.fallowrc.json` (root, via `fallow init` then adjusted)
+
+**Interfaces:**
+
+- Consumes: root scripts from Task 6.
+- Produces: a pre-commit gate (typecheck + eslint + prettier on staged) and a pre-push gate (build + tests + fallow).
+
+- [ ] **Step 1: Install the tools (from repo root)**
+
+```bash
+pnpm add -D -w husky@^9.1.7 lint-staged@^17.2.0 fallow@^3.9.1
+```
+
+(`-w` installs to the workspace root.)
+
+- [ ] **Step 2: Initialize Husky**
+
+```bash
+pnpm exec husky init
+```
+
+This creates `.husky/` and a sample `.husky/pre-commit`, and sets `core.hooksPath`. Because the git root IS the repo root (where the root `package.json` lives), hooks resolve correctly.
+
+- [ ] **Step 3: Write `.lintstagedrc.json` (root)**
+
+```json
+{
+  "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+  "*.{json,md,yaml,yml}": ["prettier --write"]
+}
+```
+
+- [ ] **Step 4: Write `.husky/pre-commit`**
+
+```sh
+pnpm exec lint-staged
+pnpm --filter backend typecheck
+```
+
+(Husky v9 hooks are plain scripts — no shebang/sourcing boilerplate required. A non-zero exit from either line aborts the commit.)
+
+- [ ] **Step 5: Write `.husky/pre-push`**
+
+```sh
+pnpm --filter backend build
+pnpm --filter backend test
+pnpm --filter backend test:e2e
+pnpm fallow
+```
+
+- [ ] **Step 6: Initialize fallow config and add the `fallow` script**
+
+Run (from repo root):
+
+```bash
+pnpm exec fallow init
+```
+
+Then ensure `.fallowrc.json` sets the entry points to the backend source and ignores generated/build output. Target config (adjust to what `init` produced):
+
+```json
+{
+  "entry": ["backend/src/main.ts", "backend/scripts/*.ts"],
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "backend/src/generated/**",
+    "backend/prisma/migrations/**",
+    "**/*.spec.ts",
+    "**/*.e2e-spec.ts"
+  ]
+}
+```
+
+Add to root `package.json` scripts: `"fallow": "fallow dead-code && fallow dupes"`.
+
+Note: `fallow dead-code` will likely flag the forward-declared-but-unused deps
+(`@nestjs/jwt` etc. are used; but e.g. `class-transformer` may register as
+unused, and `bcryptjs` is used). Investigate each finding: if it is genuinely
+dead, remove it; if it is a false positive (used indirectly, entry not
+declared), add the entry or an ignore rule with a comment. Do NOT blanket-ignore
+to make it pass — the point of the gate is real findings.
+
+- [ ] **Step 7: Verify the pre-commit hook fires and passes**
+
+Make a trivial no-op change and commit through the hook:
+
+```bash
+echo "" >> backend/src/main.ts   # whitespace tweak
+git add backend/src/main.ts
+git commit -m "test: verify pre-commit hook"
+```
+
+Expected: lint-staged runs (eslint+prettier on the staged file), typecheck runs, commit succeeds. Then revert the trivial change in a follow-up if it left noise, or amend. Confirm a deliberately-broken commit is REJECTED: introduce a type error, `git add`, attempt commit, observe failure, then discard the broken change.
+
+- [ ] **Step 8: Verify the pre-push chain runs green (without an actual remote)**
+
+Run the pre-push script body manually (there is no git remote):
+
+```bash
+pnpm --filter backend build && pnpm --filter backend test && \
+  pnpm --filter backend test:e2e && pnpm fallow
+```
+
+Expected: all four stages succeed (exit 0). Fix any fallow findings per Step 6.
+
+- [ ] **Step 9: Commit the hook setup**
+
+```bash
+git add package.json pnpm-lock.yaml .husky .lintstagedrc.json .fallowrc.json
+git commit -m "chore: husky pre-commit (typecheck+lint+format) and pre-push (build+test+fallow)"
+```
+
+---
+
+### Task 8: AGENTS.md and agent-facing docs
+
+**Files:**
+
+- Create: `AGENTS.md` (repo root)
+- Create: `backend/AGENTS.md` (backend-specific pointers)
+- Modify: `README.md` if present, else Create: `README.md` (repo root, brief human-facing pointer to AGENTS.md)
+
+**Interfaces:**
+
+- Consumes: everything built so far (structure, scripts, conventions).
+- Produces: durable agent onboarding docs.
+
+- [ ] **Step 1: Create repo-root `AGENTS.md`**
+
+Write a concise, accurate agent-onboarding doc containing (verify every command against the actual repo before writing it):
+
+- **Project**: Minecraft server management panel. Monorepo (pnpm workspace): `backend/` (Nest 11 API), `frontend/` (Next.js — not built yet), `docs/superpowers/` (specs + plans).
+- **Stack + pinned versions** and the rationale: TypeScript 5.9, Prisma 6.19, Nest 11, CommonJS. **Do not upgrade to TypeScript 7 or Prisma 7** — TS7 removed the programmatic compiler API nest-cli needs (returns in 7.1, ~Oct 2026) and Prisma 7 is ESM-only; both break this toolchain (proven in a spike, 2026-07-25).
+- **Commands** (from repo root): `pnpm install`, `pnpm --filter backend start:dev`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm lint`, `pnpm format`, `pnpm fallow`.
+- **Architecture rule (binding):** controller → service → repository. Only repositories import/use `PrismaService`; services never touch Prisma directly.
+- **Auth model:** username + password (no email); JWT in an httpOnly cookie `mcp_token`; accounts are created ONLY via the CLI (`pnpm --filter backend run user -- create <username> <password>` / `reset` / `delete` / `list`) — there is no HTTP signup route.
+- **Env:** required vars `DATABASE_URL`, `JWT_SECRET`; validated by `verifyEnv()` at boot and `pnpm --filter backend run verify:env`. Never commit `.env`.
+- **Git hooks:** pre-commit runs typecheck + eslint + prettier (lint-staged); pre-push runs build + tests + fallow. Do not bypass with `--no-verify`. Fix the code, not the gate.
+- **fallow MCP:** the repo ships `fallow` (dead-code/dupes). Agents can use its MCP server for live analysis (see backend/AGENTS.md for the connection command).
+
+- [ ] **Step 2: Create `backend/AGENTS.md`**
+
+Backend-specific: module layout (`auth/`, `users/`, `prisma/`, `health/`, `config/`), the repository pattern, where migrations live, how to add a Prisma model + migrate (`pnpm --filter backend exec prisma migrate dev --name <name>`), and test conventions (unit `*.spec.ts` colocated in `src/`, e2e in `test/`, `maxWorkers: 3`).
+
+- [ ] **Step 3: Document the fallow MCP integration**
+
+Fetch the current integration doc (`https://docs.fallow.tools/integrations/mcp`) and record, in `backend/AGENTS.md` under a "fallow MCP" heading, the exact way to register the `fallow-mcp` server (the binary shipped by the `fallow` package) with an MCP client — the command/args and any config. If the doc cannot be fetched at implementation time, record the known binary (`fallow-mcp`, provided by the `fallow` npm package) and a TODO to fill exact client config, and flag it as DONE_WITH_CONCERNS.
+
+- [ ] **Step 4: Create/adjust root `README.md`**
+
+A short human-facing README: one-paragraph description, "See AGENTS.md for full development guide", and the quick-start (`pnpm install`, create an account via the CLI, `pnpm --filter backend start:dev`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add AGENTS.md backend/AGENTS.md README.md
+git commit -m "docs: add AGENTS.md agent-onboarding guide and fallow MCP notes"
+```

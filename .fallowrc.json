@@ -1,0 +1,40 @@
+{
+  // This file is JSONC: fallow reads these comments; generic JSON tools may not.
+  "$schema": "./node_modules/fallow/schema.json",
+  "entry": ["backend/src/main.ts", "backend/scripts/*.ts"],
+  "workspaces": {
+    "patterns": ["backend"]
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "backend/src/generated/**",
+    "backend/prisma/migrations/**",
+    "**/*.spec.ts",
+    "**/*.e2e-spec.ts"
+  ],
+  "ignoreDependencies": [
+    // class-transformer: never imported directly in backend/src, but it is
+    // consumed at runtime by @nestjs/common's ValidationPipe({ transform:
+    // true }) (see backend/src/main.ts) — an optional peer dep of
+    // @nestjs/common that Nest requires internally via plainToInstance.
+    // Genuinely used; fallow can't see the framework-internal import.
+    "class-transformer",
+    // supertest: only imported from backend/test/*.e2e-spec.ts, which this
+    // repo intentionally excludes via ignorePatterns above, so its usage is
+    // invisible to fallow's dependency scan. Genuinely used in e2e tests.
+    "supertest"
+  ],
+  "duplicates": {
+    // Hide pair-only clones; focus on widespread copy-paste
+    // worth refactoring. Lower to 2 to report every duplicate pair.
+    "minOccurrences": 3
+    // Common additions (uncomment to enable):
+    // "ignore": [
+    //   "**/lib/**",          // for repos that publish transpiled output to lib/
+    //   "**/legacy/**",       // for repos with legacy-build artifacts
+    //   "**/__generated__/**", // Relay, GraphQL Code Generator
+    //   "**/generated/**"     // OpenAPI, Protobuf codegen
+    // ]
+  }
+}
