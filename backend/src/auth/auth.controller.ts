@@ -18,21 +18,21 @@ const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('login')
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ username: string }> {
-    const user = await this.auth.validateCredentials(
+    const user = await this.authService.validateCredentials(
       dto.username,
       dto.password,
     );
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    res.cookie(COOKIE_NAME, this.auth.signToken(user), {
+    res.cookie(COOKIE_NAME, this.authService.signToken(user), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',

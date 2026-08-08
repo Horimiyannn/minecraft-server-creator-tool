@@ -15,15 +15,15 @@ export interface UserRecord {
 
 @Injectable()
 export class UserRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prismaService: PrismaService) {}
 
   findByUsername(username: string): Promise<UserRecord | null> {
-    return this.prisma.user.findUnique({ where: { username } });
+    return this.prismaService.user.findUnique({ where: { username } });
   }
 
   async create(username: string, passwordHash: string): Promise<UserRecord> {
     try {
-      return await this.prisma.user.create({
+      return await this.prismaService.user.create({
         data: { username, passwordHash },
       });
     } catch (error) {
@@ -42,7 +42,7 @@ export class UserRepository {
     passwordHash: string,
   ): Promise<UserRecord> {
     try {
-      return await this.prisma.user.update({
+      return await this.prismaService.user.update({
         where: { username },
         data: { passwordHash },
       });
@@ -59,7 +59,7 @@ export class UserRepository {
 
   async delete(username: string): Promise<void> {
     try {
-      await this.prisma.user.delete({ where: { username } });
+      await this.prismaService.user.delete({ where: { username } });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -72,7 +72,7 @@ export class UserRepository {
   }
 
   list(): Promise<Pick<UserRecord, 'username' | 'createdAt'>[]> {
-    return this.prisma.user.findMany({
+    return this.prismaService.user.findMany({
       select: { username: true, createdAt: true },
       orderBy: { username: 'asc' },
     });
