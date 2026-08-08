@@ -82,7 +82,9 @@ describe('ServersService.createServer', () => {
     repo.create.mockResolvedValue(record());
     docker.create.mockResolvedValue('c123');
     docker.start.mockRejectedValue(new Error('daemon down'));
-    repo.findById.mockResolvedValue(record({ containerId: 'c123' }));
+    // NB: setContainer never ran, so the DB row still has containerId=null.
+    // Rollback must still remove the just-created container by its local id.
+    repo.findById.mockResolvedValue(record({ containerId: null }));
     const svc = new ServersService(repo, docker);
 
     await expect(svc.createServer(input)).rejects.toThrow('daemon down');

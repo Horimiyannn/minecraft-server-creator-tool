@@ -33,6 +33,10 @@ export class ServersService {
       rconPassword,
     });
 
+    // Track the container id locally: on failure we must remove it even if
+    // `setContainer` never ran (otherwise the created container is orphaned —
+    // the DB row still has containerId=null so a DB lookup can't find it).
+    let containerId: string | undefined;
     try {
       const env = toItzgEnv({
         loader: input.loader,
@@ -40,7 +44,7 @@ export class ServersService {
         ramMb: input.ramMb,
         rconPassword,
       });
-      const containerId = await this.dockerService.create({
+      containerId = await this.dockerService.create({
         id: server.id,
         port: input.port,
         env,
@@ -54,17 +58,14 @@ export class ServersService {
         ),
       );
     } catch (error) {
-      await this.rollback(server.id);
+      await this.rollback(server.id, containerId);
       throw error;
     }
   }
 
-  private async rollback(id: string): Promise<void> {
-    const server = await this.serverRepository.findById(id);
-    if (server?.containerId) {
-      await this.dockerService
-        .remove(server.containerId)
-        .catch(() => undefined);
+  private async rollback(id: string, containerId?: string): Promise<void> {
+    if (containerId) {
+      await this.dockerService.remove(containerId).catch(() => undefined);
     }
     await this.serverRepository.setStatus(id, 'failed').catch(() => undefined);
   }
