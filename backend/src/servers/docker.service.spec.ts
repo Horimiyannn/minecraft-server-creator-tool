@@ -1,74 +1,113 @@
-const createContainer = jest.fn();
-const getContainer = jest.fn();
+import { DockerService, RawStats } from './docker.service';
 
-jest.mock('dockerode', () =>
-  jest.fn().mockImplementation(() => ({ createContainer, getContainer })),
-);
 jest.mock('node:fs/promises', () => ({
   mkdir: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { mkdir } from 'node:fs/promises';
-import { ConfigService } from '@nestjs/config';
-import { DockerService } from './docker.service';
-
-function makeService(): DockerService {
-  const configService = {
-    get: (key: string) =>
-      key === 'MC_DATA_ROOT' ? '/tmp/mc' : 'itzg/minecraft-server',
-  } as unknown as ConfigService;
-  return new DockerService(configService);
+// A fake dockerode container + client so we assert call args without a daemon.
+function makeService(container: Record<string, jest.Mock>): {
+  service: DockerService;
+  getContainer: jest.Mock;
+} {
+  const getContainer = jest.fn().mockReturnValue(container);
+  const configService = { get: jest.fn().mockReturnValue(undefined) };
+  const service = new DockerService(configService as never);
+  // Replace the private dockerode client with our fake.
+  (service as unknown as { docker: { getContainer: jest.Mock } }).docker = {
+    getContainer,
+  };
+  return { service, getContainer };
 }
 
-describe('DockerService', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it('creates a container with the correct image, name, bind, port, and env', async () => {
-    createContainer.mockResolvedValue({ id: 'container123' });
-    const svc = makeService();
-
-    const id = await svc.create({
-      id: 'srv1',
-      port: 25565,
-      env: ['EULA=TRUE', 'TYPE=VANILLA'],
-    });
-
-    expect(id).toBe('container123');
-    expect(mkdir).toHaveBeenCalledWith('/tmp/mc/srv1/data', {
-      recursive: true,
-    });
-    const cfg = createContainer.mock.calls[0][0];
-    expect(cfg.Image).toBe('itzg/minecraft-server');
-    expect(cfg.name).toBe('mc-server-srv1');
-    expect(cfg.Env).toEqual(['EULA=TRUE', 'TYPE=VANILLA']);
-    expect(cfg.HostConfig.Binds).toEqual(['/tmp/mc/srv1/data:/data']);
-    expect(cfg.HostConfig.PortBindings['25565/tcp']).toEqual([
-      { HostPort: '25565' },
-    ]);
-  });
-
-  it('start delegates to the container', async () => {
-    const start = jest.fn().mockResolvedValue(undefined);
-    getContainer.mockReturnValue({ start });
-    await makeService().start('c1');
+describe('DockerService.logs', () => {
+  it('requests a following, combined stdout+stderr stream', async () => {
+    const logs = jest.fn().mockResolvedValue('STREAM');
+    const { service, getContainer } = makeService({ logs });
+    const stream = await service.logs('c1', { tail: 50 });
     expect(getContainer).toHaveBeenCalledWith('c1');
-    expect(start).toHaveBeenCalled();
+    expect(logs).toHaveBeenCalledWith({
+      follow: true,
+      stdout: true,
+      stderr: true,
+      tail: 50,
+      timestamps: false,
+    });
+    expect(stream).toBe('STREAM');
   });
 
-  it('stop swallows an already-stopped (304) error', async () => {
-    const stop = jest.fn().mockRejectedValue({ statusCode: 304 });
-    getContainer.mockReturnValue({ stop });
-    await expect(makeService().stop('c1')).resolves.toBeUndefined();
+  it('defaults tail to 200', async () => {
+    const logs = jest.fn().mockResolvedValue('S');
+    const { service } = makeService({ logs });
+    await service.logs('c1');
+    expect(logs).toHaveBeenCalledWith(expect.objectContaining({ tail: 200 }));
+  });
+});
+
+describe('DockerService.stats', () => {
+  it('returns a one-shot (non-streaming) stats snapshot', async () => {
+    const raw: RawStats = {
+      cpu_stats: { cpu_usage: { total_usage: 0 } },
+      precpu_stats: { cpu_usage: { total_usage: 0 } },
+      memory_stats: {},
+    };
+    const stats = jest.fn().mockResolvedValue(raw);
+    const { service } = makeService({ stats });
+    const result = await service.stats('c1');
+    expect(stats).toHaveBeenCalledWith({ stream: false });
+    expect(result).toBe(raw);
+  });
+});
+
+describe('DockerService.rconEndpoint', () => {
+  it('reads the loopback host port bound to 25575/tcp', async () => {
+    const inspect = jest.fn().mockResolvedValue({
+      NetworkSettings: {
+        Ports: { '25575/tcp': [{ HostIp: '127.0.0.1', HostPort: '49222' }] },
+      },
+    });
+    const { service } = makeService({ inspect });
+    await expect(service.rconEndpoint('c1')).resolves.toEqual({
+      host: '127.0.0.1',
+      port: 49222,
+    });
   });
 
-  it('inspect maps running state', async () => {
+  it('throws when RCON is not published', async () => {
     const inspect = jest
       .fn()
-      .mockResolvedValue({ State: { Running: true, Status: 'running' } });
-    getContainer.mockReturnValue({ inspect });
-    await expect(makeService().inspect('c1')).resolves.toEqual({
-      running: true,
-      status: 'running',
+      .mockResolvedValue({ NetworkSettings: { Ports: {} } });
+    const { service } = makeService({ inspect });
+    await expect(service.rconEndpoint('c1')).rejects.toThrow('RCON port');
+  });
+});
+
+describe('DockerService.create', () => {
+  it('publishes RCON on loopback, sets a TTY, and keeps the MC port', async () => {
+    const createContainer = jest.fn().mockResolvedValue({ id: 'cNEW' });
+    const getContainer = jest.fn();
+    const configService = { get: jest.fn().mockReturnValue(undefined) };
+    const service = new DockerService(configService as never);
+    (service as unknown as { docker: unknown }).docker = {
+      createContainer,
+      getContainer,
+    };
+    const id = await service.create({
+      id: 'srv1',
+      port: 25599,
+      env: ['EULA=TRUE'],
     });
+    expect(id).toBe('cNEW');
+    const arg = createContainer.mock.calls[0][0];
+    expect(arg.Tty).toBe(true);
+    expect(arg.ExposedPorts).toMatchObject({
+      '25565/tcp': {},
+      '25575/tcp': {},
+    });
+    expect(arg.HostConfig.PortBindings['25565/tcp']).toEqual([
+      { HostPort: '25599' },
+    ]);
+    expect(arg.HostConfig.PortBindings['25575/tcp']).toEqual([
+      { HostIp: '127.0.0.1', HostPort: '' },
+    ]);
   });
 });

@@ -23,7 +23,14 @@
     // supertest: only imported from backend/test/*.e2e-spec.ts, which this
     // repo intentionally excludes via ignorePatterns above, so its usage is
     // invisible to fallow's dependency scan. Genuinely used in e2e tests.
-    "supertest"
+    "supertest",
+    // socket.io-client: same as supertest — only imported from
+    // backend/test/realtime.e2e-spec.ts (excluded), so fallow can't see it.
+    "socket.io-client",
+    // @nestjs/platform-socket.io: never imported in source; Nest loads it at
+    // runtime as the socket.io adapter behind @WebSocketGateway. Required for
+    // the console/metrics gateways to work.
+    "@nestjs/platform-socket.io"
   ],
   "duplicates": {
     // Hide pair-only clones; focus on widespread copy-paste

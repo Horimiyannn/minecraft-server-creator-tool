@@ -24,6 +24,21 @@ file only adds backend detail on top of that.
   fetches upstream manifests (Mojang / PaperMC / Forge / NeoForge) via an
   injected `HttpFetcher` (token `HTTP_FETCHER`), cached 1h. Parsers live in
   `fetchers.ts` and are pure/unit-tested.
+- `console/` — `/console` socket.io gateway. Streams container logs to the
+  browser (`log` events) and routes browser commands to the server over RCON
+  (`command` → `output`, failures → `error`). `RconService` pools one
+  `rcon-client` connection per server; RCON is reached on `127.0.0.1:<ephemeral>`
+  (published by `DockerService.create`, discovered via `rconEndpoint`). Never
+  exposes `rconPassword`.
+- `metrics/` — `/metrics` socket.io gateway. On `join`, polls Docker stats +
+  data-dir size every 2s and emits `stats` (cpuPct / memUsedMb / memLimitMb /
+  diskMb); `leave` or disconnect stops it. `metrics.ts` holds the pure
+  CPU%/mem math; `MetricsService.collect` adds disk usage.
+- Both gateways authenticate at the socket.io handshake via
+  `SocketAuthService` (exported from `auth/`): it reads the `mcp_token` cookie
+  and verifies the JWT; unauthenticated sockets are disconnected before any
+  message is handled. Room lifecycle is released on the `disconnecting` event
+  (rooms are still populated there; `disconnect` fires after they are cleared).
 - `config/` — `env.ts` (`verifyEnv()` and required env var list).
 - `main.ts` — app bootstrap (`ValidationPipe`, cookie parsing, etc.).
 
@@ -87,10 +102,20 @@ Verify with `pnpm --filter ./backend run verify:env`
 
 Optional (servers): `MC_DATA_ROOT` (default `/srv/mc`) — host root for
 per-server data bind-mounts; `MC_IMAGE` (default `itzg/minecraft-server`).
+Optional (realtime): `FRONTEND_ORIGIN` (default `http://localhost:3000`) — the
+CORS origin allowed to open the `/console` and `/metrics` WebSockets with
+credentials.
 The backend needs access to the Docker socket (`/var/run/docker.sock`); run it
 as a user in the `docker` group. Docker-dependent tests are opt-in only —
 nothing in `pnpm test` / `pnpm test:e2e` requires a running daemon
 (`DockerService` is overridden with a fake in `servers.e2e-spec.ts`).
+
+## Commits
+
+Keep messages to a **short title line only** — no body, no trailers. Do NOT
+add `Co-Authored-By`, `Claude-Session`, "Generated with", or any other
+Claude/agent/AI attribution. Conventional-commit prefixes (`feat:`, `fix:`,
+`refactor:`, `docs:`, `chore:`) are fine; keep the subject concise.
 
 ## fallow MCP
 

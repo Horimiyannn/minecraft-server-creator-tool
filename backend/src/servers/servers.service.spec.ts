@@ -38,6 +38,7 @@ function makeDocker(): jest.Mocked<DockerService> {
     restart: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     inspect: jest.fn(),
+    rconEndpoint: jest.fn(),
   } as unknown as jest.Mocked<DockerService>;
 }
 
@@ -124,5 +125,40 @@ describe('ServersService lifecycle', () => {
     await svc.deleteServer('srv1');
     expect(docker.remove).toHaveBeenCalledWith('c123');
     expect(repo.delete).toHaveBeenCalledWith('srv1');
+  });
+});
+
+describe('ServersService.getRconTarget', () => {
+  it('returns the rcon endpoint plus the stored password', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.findById.mockResolvedValue(
+      record({ containerId: 'c123', rconPassword: 'secret-pw' }),
+    );
+    docker.rconEndpoint.mockResolvedValue({ host: '127.0.0.1', port: 49222 });
+    const svc = new ServersService(repo, docker);
+    await expect(svc.getRconTarget('srv1')).resolves.toEqual({
+      host: '127.0.0.1',
+      port: 49222,
+      password: 'secret-pw',
+    });
+  });
+
+  it('throws NotFound when the server has no container', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.findById.mockResolvedValue(record({ containerId: null }));
+    const svc = new ServersService(repo, docker);
+    await expect(svc.getRconTarget('srv1')).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('ServersService.resolveContainerId', () => {
+  it('returns the container id', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.findById.mockResolvedValue(record({ containerId: 'c123' }));
+    const svc = new ServersService(repo, docker);
+    await expect(svc.resolveContainerId('srv1')).resolves.toBe('c123');
   });
 });

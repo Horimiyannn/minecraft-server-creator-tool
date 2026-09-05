@@ -6,6 +6,8 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ServersModule } from './servers/servers.module';
 import { VersionsModule } from './versions/versions.module';
+import { ConsoleModule } from './console/console.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { VersionsModule } from './versions/versions.module';
     AuthModule,
     ServersModule,
     VersionsModule,
+    ConsoleModule,
+    MetricsModule,
   ],
 })
 export class AppModule {}
