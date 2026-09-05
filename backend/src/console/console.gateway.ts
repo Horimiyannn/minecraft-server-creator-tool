@@ -4,32 +4,23 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { SocketAuthService } from '../auth/socket-auth.service';
-import { DockerService } from '../servers/docker.service';
-import { ServersService } from '../servers/servers.service';
+import { LogStreamService } from './log-stream.service';
 import { RconService } from './rcon.service';
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
-
-interface LogStream {
-  stream: NodeJS.ReadableStream;
-  buffer: string;
-  count: number;
-}
 
 @WebSocketGateway({
   namespace: '/console',
   cors: { origin: FRONTEND_ORIGIN, credentials: true },
 })
 export class ConsoleGateway implements OnGatewayConnection {
-  @WebSocketServer() private readonly server!: Server;
-  private readonly streams = new Map<string, LogStream>();
+  @WebSocketServer() private readonly server!: Namespace;
 
   constructor(
     private readonly socketAuthService: SocketAuthService,
-    private readonly dockerService: DockerService,
-    private readonly serversService: ServersService,
+    private readonly logStreamService: LogStreamService,
     private readonly rconService: RconService,
   ) {}
 
@@ -41,21 +32,28 @@ export class ConsoleGateway implements OnGatewayConnection {
       return;
     }
     // 'disconnecting' fires while client.rooms is still populated
-    // ('disconnect' fires after it is cleared) — detach log streams here.
+    // ('disconnect' fires after it is cleared).
     client.on('disconnecting', () => {
       for (const room of client.rooms) {
-        if (room.startsWith('server:')) {
-          this.release(room.slice('server:'.length));
-        }
+        if (room.startsWith('server:')) this.dropIfLast(room);
       }
     });
   }
 
   @SubscribeMessage('join')
   async join(client: Socket, payload: { serverId: string }): Promise<void> {
-    const { serverId } = payload;
-    await client.join(`server:${serverId}`);
-    await this.attach(serverId);
+    const room = `server:${payload.serverId}`;
+    await client.join(room);
+    // subscribe is idempotent per server, so repeat/concurrent joins are safe.
+    await this.logStreamService.subscribe(payload.serverId, (line) =>
+      this.server.to(room).emit('log', { serverId: payload.serverId, line }),
+    );
+  }
+
+  @SubscribeMessage('leave')
+  async leave(client: Socket, payload: { serverId: string }): Promise<void> {
+    await client.leave(`server:${payload.serverId}`);
+    this.dropIfEmpty(payload.serverId);
   }
 
   @SubscribeMessage('command')
@@ -76,37 +74,20 @@ export class ConsoleGateway implements OnGatewayConnection {
     }
   }
 
-  private async attach(serverId: string): Promise<void> {
-    const existing = this.streams.get(serverId);
-    if (existing) {
-      existing.count += 1;
-      return;
-    }
-    const containerId = await this.serversService.resolveContainerId(serverId);
-    const stream = await this.dockerService.logs(containerId, { tail: 200 });
-    const entry: LogStream = { stream, buffer: '', count: 1 };
-    this.streams.set(serverId, entry);
-    stream.on('data', (chunk: Buffer) => this.fanOut(serverId, entry, chunk));
-    stream.on('end', () => this.streams.delete(serverId));
-    stream.on('error', () => this.streams.delete(serverId));
-  }
-
-  private fanOut(serverId: string, entry: LogStream, chunk: Buffer): void {
-    entry.buffer += chunk.toString('utf8');
-    const lines = entry.buffer.split('\n');
-    entry.buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      this.server.to(`server:${serverId}`).emit('log', { serverId, line });
+  private dropIfEmpty(serverId: string): void {
+    if (this.roomSize(`server:${serverId}`) === 0) {
+      this.logStreamService.unsubscribe(serverId);
     }
   }
 
-  private release(serverId: string): void {
-    const entry = this.streams.get(serverId);
-    if (!entry) return;
-    entry.count -= 1;
-    if (entry.count <= 0) {
-      this.streams.delete(serverId);
-      (entry.stream as unknown as { destroy?: () => void }).destroy?.();
+  // Called from 'disconnecting', where the leaving socket is still counted.
+  private dropIfLast(room: string): void {
+    if (this.roomSize(room) <= 1) {
+      this.logStreamService.unsubscribe(room.slice('server:'.length));
     }
+  }
+
+  private roomSize(room: string): number {
+    return this.server.adapter.rooms.get(room)?.size ?? 0;
   }
 }

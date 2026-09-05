@@ -24,7 +24,15 @@ interface CpuSnapshot {
 export interface RawStats {
   cpu_stats: CpuSnapshot;
   precpu_stats: CpuSnapshot;
-  memory_stats: { usage?: number; limit?: number; stats?: { cache?: number } };
+  memory_stats: {
+    usage?: number;
+    limit?: number;
+    stats?: {
+      cache?: number; // cgroup v1
+      inactive_file?: number; // cgroup v2
+      total_inactive_file?: number; // cgroup v1 (hierarchical)
+    };
+  };
 }
 
 const CONTAINER_MC_PORT = '25565/tcp';

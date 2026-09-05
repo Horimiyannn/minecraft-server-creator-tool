@@ -4,33 +4,22 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { SocketAuthService } from '../auth/socket-auth.service';
-import { DockerService } from '../servers/docker.service';
-import { ServersService } from '../servers/servers.service';
 import { MetricsService } from './metrics.service';
 
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
-const POLL_MS = 2000;
-
-interface Poll {
-  timer: NodeJS.Timeout;
-  count: number;
-}
 
 @WebSocketGateway({
   namespace: '/metrics',
   cors: { origin: FRONTEND_ORIGIN, credentials: true },
 })
 export class MetricsGateway implements OnGatewayConnection {
-  @WebSocketServer() private readonly server!: Server;
-  private readonly polls = new Map<string, Poll>();
+  @WebSocketServer() private readonly server!: Namespace;
 
   constructor(
     private readonly socketAuthService: SocketAuthService,
     private readonly metricsService: MetricsService,
-    private readonly dockerService: DockerService,
-    private readonly serversService: ServersService,
   ) {}
 
   handleConnection(client: Socket): void {
@@ -41,60 +30,46 @@ export class MetricsGateway implements OnGatewayConnection {
       return;
     }
     // 'disconnecting' fires while client.rooms is still populated
-    // ('disconnect' fires after it is cleared) — release polls here.
+    // ('disconnect' fires after it is cleared).
     client.on('disconnecting', () => {
       for (const room of client.rooms) {
-        if (room.startsWith('server:')) {
-          this.release(room.slice('server:'.length));
-        }
+        if (room.startsWith('server:')) this.dropIfLast(room);
       }
     });
   }
 
   @SubscribeMessage('join')
   async join(client: Socket, payload: { serverId: string }): Promise<void> {
-    const { serverId } = payload;
-    await client.join(`server:${serverId}`);
-    const existing = this.polls.get(serverId);
-    if (existing) {
-      existing.count += 1;
-      return;
-    }
-    const containerId = await this.serversService.resolveContainerId(serverId);
-    const dataDir = this.dockerService.dataDir(serverId);
-    const timer = setInterval(() => {
-      void this.tick(serverId, containerId, dataDir);
-    }, POLL_MS);
-    this.polls.set(serverId, { timer, count: 1 });
+    const room = `server:${payload.serverId}`;
+    await client.join(room);
+    // subscribe is idempotent per server, so repeat/concurrent joins are safe.
+    await this.metricsService.subscribe(payload.serverId, (stats) =>
+      this.server
+        .to(room)
+        .emit('stats', { serverId: payload.serverId, ...stats }),
+    );
   }
 
   @SubscribeMessage('leave')
-  leave(client: Socket, payload: { serverId: string }): void {
-    this.release(payload.serverId);
+  async leave(client: Socket, payload: { serverId: string }): Promise<void> {
+    await client.leave(`server:${payload.serverId}`);
+    this.dropIfEmpty(payload.serverId);
   }
 
-  private async tick(
-    serverId: string,
-    containerId: string,
-    dataDir: string,
-  ): Promise<void> {
-    try {
-      const stats = await this.metricsService.collect(containerId, dataDir);
-      this.server
-        .to(`server:${serverId}`)
-        .emit('stats', { serverId, ...stats });
-    } catch {
-      // transient (container restarting) — skip this tick
+  private dropIfEmpty(serverId: string): void {
+    if (this.roomSize(`server:${serverId}`) === 0) {
+      this.metricsService.unsubscribe(serverId);
     }
   }
 
-  private release(serverId: string): void {
-    const poll = this.polls.get(serverId);
-    if (!poll) return;
-    poll.count -= 1;
-    if (poll.count <= 0) {
-      clearInterval(poll.timer);
-      this.polls.delete(serverId);
+  // Called from 'disconnecting', where the leaving socket is still counted.
+  private dropIfLast(room: string): void {
+    if (this.roomSize(room) <= 1) {
+      this.metricsService.unsubscribe(room.slice('server:'.length));
     }
+  }
+
+  private roomSize(room: string): number {
+    return this.server.adapter.rooms.get(room)?.size ?? 0;
   }
 }

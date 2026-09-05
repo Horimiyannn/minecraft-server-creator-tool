@@ -31,10 +31,13 @@ export function computeMem(raw: RawStats): {
   limitMb: number;
 } {
   const usage = raw.memory_stats.usage ?? 0;
-  const cache = raw.memory_stats.stats?.cache ?? 0;
+  const s = raw.memory_stats.stats;
+  // Page cache to subtract: inactive_file on cgroup v2 (default on modern
+  // hosts), cache on v1. Matches Docker's own used-memory calculation.
+  const pageCache = s?.inactive_file ?? s?.total_inactive_file ?? s?.cache ?? 0;
   const limit = raw.memory_stats.limit ?? 0;
   return {
-    usedMb: Math.round(Math.max(0, usage - cache) / MB),
+    usedMb: Math.round(Math.max(0, usage - pageCache) / MB),
     limitMb: Math.round(limit / MB),
   };
 }

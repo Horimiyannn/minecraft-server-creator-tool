@@ -6,9 +6,8 @@ import { io, Socket } from 'socket.io-client';
 import { Readable } from 'node:stream';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { DockerService } from '../src/servers/docker.service';
+import { DockerService, RawStats } from '../src/servers/docker.service';
 import { RconService } from '../src/console/rcon.service';
-import { MetricsService } from '../src/metrics/metrics.service';
 import { hashPassword } from '../src/auth/password.util';
 
 // A fresh fake docker log stream that pushes one line shortly after the
@@ -19,6 +18,16 @@ function fakeLogStream(): Readable {
   return s;
 }
 
+const fakeStats: RawStats = {
+  cpu_stats: {
+    cpu_usage: { total_usage: 200 },
+    system_cpu_usage: 2000,
+    online_cpus: 4,
+  },
+  precpu_stats: { cpu_usage: { total_usage: 100 }, system_cpu_usage: 1000 },
+  memory_stats: { usage: 300 * 1024 * 1024, limit: 2048 * 1024 * 1024 },
+};
+
 const fakeDocker: Partial<DockerService> = {
   create: jest.fn().mockResolvedValue('fake-container-id'),
   start: jest.fn().mockResolvedValue(undefined),
@@ -27,20 +36,13 @@ const fakeDocker: Partial<DockerService> = {
   remove: jest.fn().mockResolvedValue(undefined),
   inspect: jest.fn().mockResolvedValue({ running: true, status: 'running' }),
   logs: jest.fn().mockImplementation(() => Promise.resolve(fakeLogStream())),
+  stats: jest.fn().mockResolvedValue(fakeStats),
   dataDir: jest.fn().mockReturnValue('/tmp/does-not-exist'),
 };
 const fakeRcon: Partial<RconService> = {
   send: jest
     .fn()
     .mockResolvedValue('There are 0 of a max of 20 players online'),
-};
-const fakeMetrics: Partial<MetricsService> = {
-  collect: jest.fn().mockResolvedValue({
-    cpuPct: 5,
-    memUsedMb: 300,
-    memLimitMb: 2048,
-    diskMb: 10,
-  }),
 };
 
 describe('Realtime (e2e)', () => {
@@ -56,8 +58,6 @@ describe('Realtime (e2e)', () => {
       .useValue(fakeDocker)
       .overrideProvider(RconService)
       .useValue(fakeRcon)
-      .overrideProvider(MetricsService)
-      .useValue(fakeMetrics)
       .compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
@@ -122,12 +122,16 @@ describe('Realtime (e2e)', () => {
   it('streams a metrics tick to an authed subscriber', (done) => {
     const socket = connect('/metrics');
     socket.on('connect', () => socket.emit('join', { serverId }));
-    socket.on('stats', (payload: { serverId: string; cpuPct: number }) => {
-      expect(payload.serverId).toBe(serverId);
-      expect(payload.cpuPct).toBe(5);
-      socket.close();
-      done();
-    });
+    socket.on(
+      'stats',
+      (payload: { serverId: string; cpuPct: number; memUsedMb: number }) => {
+        expect(payload.serverId).toBe(serverId);
+        expect(payload.cpuPct).toBeCloseTo(40); // 0.1 * 4 cpus * 100
+        expect(payload.memUsedMb).toBe(300);
+        socket.close();
+        done();
+      },
+    );
   });
 
   it('streams a log line and returns command output on the console', (done) => {
