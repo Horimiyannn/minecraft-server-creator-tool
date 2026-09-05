@@ -15,7 +15,20 @@ export interface ContainerStatus {
   status: string;
 }
 
+interface CpuSnapshot {
+  cpu_usage: { total_usage: number; percpu_usage?: number[] };
+  system_cpu_usage?: number;
+  online_cpus?: number;
+}
+
+export interface RawStats {
+  cpu_stats: CpuSnapshot;
+  precpu_stats: CpuSnapshot;
+  memory_stats: { usage?: number; limit?: number; stats?: { cache?: number } };
+}
+
 const CONTAINER_MC_PORT = '25565/tcp';
+const CONTAINER_RCON_PORT = '25575/tcp';
 
 @Injectable()
 export class DockerService {
@@ -37,11 +50,14 @@ export class DockerService {
       Image: this.image,
       name: `mc-server-${opts.id}`,
       Env: opts.env,
-      ExposedPorts: { [CONTAINER_MC_PORT]: {} },
+      Tty: true, // plain-text log stream (no stdout/stderr multiplexing)
+      ExposedPorts: { [CONTAINER_MC_PORT]: {}, [CONTAINER_RCON_PORT]: {} },
       HostConfig: {
         Binds: [`${dataDir}:/data`],
         PortBindings: {
           [CONTAINER_MC_PORT]: [{ HostPort: String(opts.port) }],
+          // RCON: loopback only, OS-assigned host port (read back via inspect).
+          [CONTAINER_RCON_PORT]: [{ HostIp: '127.0.0.1', HostPort: '' }],
         },
         RestartPolicy: { Name: 'no' },
       },
@@ -76,6 +92,42 @@ export class DockerService {
   async inspect(containerId: string): Promise<ContainerStatus> {
     const info = await this.docker.getContainer(containerId).inspect();
     return { running: info.State.Running, status: info.State.Status };
+  }
+
+  dataDir(id: string): string {
+    return path.join(this.dataRoot, id, 'data');
+  }
+
+  async logs(
+    containerId: string,
+    opts: { tail?: number } = {},
+  ): Promise<NodeJS.ReadableStream> {
+    const stream = await this.docker.getContainer(containerId).logs({
+      follow: true,
+      stdout: true,
+      stderr: true,
+      tail: opts.tail ?? 200,
+      timestamps: false,
+    });
+    return stream as unknown as NodeJS.ReadableStream;
+  }
+
+  async stats(containerId: string): Promise<RawStats> {
+    const raw = await this.docker.getContainer(containerId).stats({
+      stream: false,
+    });
+    return raw as unknown as RawStats;
+  }
+
+  async rconEndpoint(
+    containerId: string,
+  ): Promise<{ host: string; port: number }> {
+    const info = await this.docker.getContainer(containerId).inspect();
+    const binding = info.NetworkSettings?.Ports?.[CONTAINER_RCON_PORT]?.[0];
+    if (!binding?.HostPort) {
+      throw new Error('RCON port is not published for this container');
+    }
+    return { host: '127.0.0.1', port: Number(binding.HostPort) };
   }
 }
 
