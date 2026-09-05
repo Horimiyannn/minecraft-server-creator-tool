@@ -112,6 +112,23 @@ export class ServersService {
     await this.serverRepository.delete(id);
   }
 
+  async resolveContainerId(id: string): Promise<string> {
+    return this.requireContainer(id);
+  }
+
+  async getRconTarget(
+    id: string,
+  ): Promise<{ host: string; port: number; password: string }> {
+    const server = await this.requireServer(id);
+    if (!server.containerId) {
+      throw new NotFoundException(`Server "${id}" has no container yet`);
+    }
+    const { host, port } = await this.dockerService.rconEndpoint(
+      server.containerId,
+    );
+    return { host, port, password: server.rconPassword };
+  }
+
   private async requireServer(id: string): Promise<ServerRecord> {
     const server = await this.serverRepository.findById(id);
     if (!server) throw new NotFoundException(`Server "${id}" not found`);

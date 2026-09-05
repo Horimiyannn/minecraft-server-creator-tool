@@ -9,6 +9,6 @@ import { DockerService } from './docker.service';
   imports: [PrismaModule],
   controllers: [ServersController],
   providers: [ServersService, ServerRepository, DockerService],
-  exports: [ServersService],
+  exports: [ServersService, DockerService],
 })
 export class ServersModule {}
