@@ -1,6 +1,5 @@
 import {
   OnGatewayConnection,
-  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -23,9 +22,7 @@ interface LogStream {
   namespace: '/console',
   cors: { origin: FRONTEND_ORIGIN, credentials: true },
 })
-export class ConsoleGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class ConsoleGateway implements OnGatewayConnection {
   @WebSocketServer() private readonly server!: Server;
   private readonly streams = new Map<string, LogStream>();
 
@@ -41,15 +38,17 @@ export class ConsoleGateway
       client.data.user = this.socketAuthService.authenticate(client);
     } catch {
       client.disconnect();
+      return;
     }
-  }
-
-  handleDisconnect(client: Socket): void {
-    for (const room of client.rooms) {
-      if (room.startsWith('server:')) {
-        this.release(room.slice('server:'.length));
+    // 'disconnecting' fires while client.rooms is still populated
+    // ('disconnect' fires after it is cleared) — detach log streams here.
+    client.on('disconnecting', () => {
+      for (const room of client.rooms) {
+        if (room.startsWith('server:')) {
+          this.release(room.slice('server:'.length));
+        }
       }
-    }
+    });
   }
 
   @SubscribeMessage('join')

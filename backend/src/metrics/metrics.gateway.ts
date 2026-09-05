@@ -38,7 +38,17 @@ export class MetricsGateway implements OnGatewayConnection {
       client.data.user = this.socketAuthService.authenticate(client);
     } catch {
       client.disconnect();
+      return;
     }
+    // 'disconnecting' fires while client.rooms is still populated
+    // ('disconnect' fires after it is cleared) — release polls here.
+    client.on('disconnecting', () => {
+      for (const room of client.rooms) {
+        if (room.startsWith('server:')) {
+          this.release(room.slice('server:'.length));
+        }
+      }
+    });
   }
 
   @SubscribeMessage('join')
