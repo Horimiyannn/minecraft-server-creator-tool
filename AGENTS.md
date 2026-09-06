@@ -7,7 +7,7 @@ Agent-onboarding guide for this repo. Read this before making changes.
 Minecraft server management panel. This is a pnpm workspace monorepo:
 
 - `backend/` — Nest 11 API (`mc-panel-backend`). See `backend/AGENTS.md` for backend-specific detail.
-- `frontend/` — Next.js UI. **Not built yet.**
+- `frontend/` — Next.js UI.
 - `docs/superpowers/` — specs and plans (`docs/superpowers/specs/`, `docs/superpowers/plans/`).
 
 ## Stack — pinned versions, do not upgrade past these

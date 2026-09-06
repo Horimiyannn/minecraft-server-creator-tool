@@ -10,6 +10,9 @@ export default tseslint.config(
       '**/node_modules/**',
       'backend/src/generated/**',
       'backend/prisma/migrations/**',
+      // frontend/ pins its own ESLint major + eslint-config-next; lints
+      // itself via `pnpm --filter ./frontend lint`.
+      'frontend/**',
     ],
   },
   js.configs.recommended,
