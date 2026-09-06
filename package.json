@@ -13,7 +13,10 @@
     "test": "pnpm --filter ./backend test",
     "test:e2e": "pnpm --filter ./backend test:e2e",
     "build": "pnpm --filter ./backend build",
-    "fallow": "fallow dead-code && fallow dupes"
+    "fallow": "fallow dead-code && fallow dupes",
+    "test:fe": "pnpm --filter ./frontend test",
+    "typecheck:fe": "pnpm --filter ./frontend typecheck",
+    "build:fe": "pnpm --filter ./frontend build"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

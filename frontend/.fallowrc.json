@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "boundaries": {
+    "zones": [
+      {
+        "name": "shared",
+        "patterns": [
+          "src/utils/**",
+          "src/lib/**",
+          "src/hooks/**",
+          "src/types/**",
+          "src/constants/**"
+        ]
+      },
+      { "name": "ui", "patterns": ["src/ui/**"] },
+      { "name": "components", "patterns": ["src/components/**"] },
+      { "name": "modules", "patterns": ["src/modules/**"] },
+      { "name": "app", "patterns": ["src/app/**"] }
+    ],
+    "rules": [
+      { "from": "ui", "allow": ["ui", "shared"] },
+      { "from": "shared", "allow": ["shared", "ui"] },
+      { "from": "components", "allow": ["ui", "components", "shared"] },
+      { "from": "modules", "allow": ["ui", "components", "shared", "modules"] },
+      {
+        "from": "app",
+        "allow": ["ui", "components", "shared", "modules", "app"]
+      }
+    ]
+  }
+}

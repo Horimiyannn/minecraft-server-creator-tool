@@ -1,1 +1,2 @@
 pnpm build && pnpm test && pnpm test:e2e && pnpm fallow
+pnpm --filter ./frontend typecheck && pnpm --filter ./frontend lint && pnpm --filter ./frontend test && pnpm --filter ./frontend build

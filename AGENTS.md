@@ -94,3 +94,21 @@ code — don't skip the gate.
 `.fallowrc.json` and run via `pnpm fallow` (pre-push gate). It also ships an
 MCP server binary, `fallow-mcp`, for live analysis from an agent — see
 "fallow MCP" in `backend/AGENTS.md` for how to register it.
+
+## Frontend
+
+`frontend/` — Next 16 App Router, layered module architecture mirroring the
+org's `sense-frontend` (`src/ui` primitives · `src/components` shared ·
+`src/modules/<feature>` with an `index.ts` public surface · shared
+`src/{lib,utils,types,constants,hooks}`). Tailwind v4, TanStack Query for
+HTTP, socket.io-client for live console/metrics. Talks to the API
+cross-origin with `credentials:'include'` (backend `enableCors`).
+
+- `pnpm --filter ./frontend dev` — UI on :3000 (API must be on :3001).
+- `pnpm --filter ./frontend test` — Jest (next/jest) unit/component tests.
+- `pnpm --filter ./frontend e2e` — Playwright, route-mocked backend (manual/CI,
+  not in pre-push).
+- Env: `NEXT_PUBLIC_API_URL` (default `http://localhost:3001`). Backend needs
+  `FRONTEND_ORIGIN` (default `http://localhost:3000`).
+- Boundaries: `frontend/.fallowrc.json` zones + ESLint `no-restricted-imports`.
+  A module's `ui/` is private — never import `@/modules/*/ui` from outside it.

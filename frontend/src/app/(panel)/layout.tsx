@@ -3,8 +3,8 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ROUTES } from '@/constants';
 import { Spinner } from '@ui';
-import { AppNav } from '@components';
 import { useMe } from '@/modules/auth';
+import { AppNav } from './AppNav';
 
 export default function PanelLayout({
   children,
