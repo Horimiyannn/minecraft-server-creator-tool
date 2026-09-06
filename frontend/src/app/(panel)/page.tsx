@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ROUTES } from '@/constants';
 import { Button, Spinner } from '@ui';
 import { useServers, ServerCard } from '@/modules/servers';
+import { LiveCpuRam } from '@/modules/metrics';
 
 export default function Dashboard() {
   const { data: servers, isLoading, isError } = useServers();
@@ -19,7 +20,13 @@ export default function Dashboard() {
       {isError && <p className="text-red-400">Failed to load servers.</p>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {servers?.map((s) => (
-          <ServerCard key={s.id} server={s} metricsSlot={null} />
+          <ServerCard
+            key={s.id}
+            server={s}
+            metricsSlot={
+              s.status === 'running' ? <LiveCpuRam serverId={s.id} /> : null
+            }
+          />
         ))}
       </div>
       {servers?.length === 0 && (
