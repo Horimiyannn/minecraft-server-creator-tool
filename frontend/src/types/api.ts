@@ -20,7 +20,6 @@ export interface ServerDetail extends PublicServer {
 }
 
 export interface Session {
-  id: string;
   username: string;
 }
 
