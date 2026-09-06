@@ -1,4 +1,9 @@
 import { api } from '@/lib/api-client';
 
-export const fetchVersions = (loader: string) =>
-  api<string[]>(`/versions/${loader}`);
+interface VersionList {
+  loader: string;
+  versions: string[];
+}
+
+export const fetchVersions = (loader: string): Promise<string[]> =>
+  api<VersionList>(`/versions/${loader}`).then((r) => r.versions);

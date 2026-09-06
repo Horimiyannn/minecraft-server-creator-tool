@@ -39,7 +39,7 @@ describe('CreateWizard', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Version')).not.toBeDisabled(),
     );
-    await userEvent.selectOptions(screen.getByLabelText('Version'), '1.20.1');
+    await userEvent.selectOptions(screen.getByLabelText('Version'), '1.20.2');
     await userEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() =>
@@ -47,7 +47,7 @@ describe('CreateWizard', () => {
         expect.objectContaining({
           name: 'survival',
           loader: 'vanilla',
-          version: '1.20.1',
+          version: '1.20.2',
         }),
         expect.anything(),
       ),

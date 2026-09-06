@@ -29,6 +29,6 @@ export async function mockBackend(page: Page) {
     r.fulfill({ json: { ...server, id: 'new1', live: null } }),
   );
   await page.route('**/versions/**', (r) =>
-    r.fulfill({ json: ['1.20.1', '1.20.2'] }),
+    r.fulfill({ json: { loader: 'vanilla', versions: ['1.20.1', '1.20.2'] } }),
   );
 }
