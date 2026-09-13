@@ -125,6 +125,11 @@ export class ServersService {
     return this.requireContainer(id);
   }
 
+  /** Existence check for modules that address a server by id but need no record. */
+  async assertServerExists(id: string): Promise<void> {
+    await this.requireServer(id);
+  }
+
   async getRconTarget(
     id: string,
   ): Promise<{ host: string; port: number; password: string }> {
