@@ -5,3 +5,7 @@ dist/
 .env
 .env.*
 .fallow/
+
+# Local Minecraft server data (MC_DATA_ROOT pointed inside the repo): worlds,
+# mods, configs and backups — never commit it.
+/data/
