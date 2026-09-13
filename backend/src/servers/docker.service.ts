@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir } from 'node:fs/promises';
-import * as path from 'node:path';
 import Docker from 'dockerode';
+import { dataDir as dataDirOf } from './paths';
 
 export interface CreateContainerOptions {
   id: string;
@@ -54,8 +54,8 @@ export class DockerService {
   }
 
   async create(opts: CreateContainerOptions): Promise<string> {
-    const dataDir = path.join(this.dataRoot, opts.id, 'data');
-    await mkdir(dataDir, { recursive: true });
+    const dir = dataDirOf(this.dataRoot, opts.id);
+    await mkdir(dir, { recursive: true });
     await this.ensureImage();
 
     const container = await this.docker.createContainer({
@@ -65,7 +65,7 @@ export class DockerService {
       Tty: true, // plain-text log stream (no stdout/stderr multiplexing)
       ExposedPorts: { [CONTAINER_MC_PORT]: {}, [CONTAINER_RCON_PORT]: {} },
       HostConfig: {
-        Binds: [`${dataDir}:/data`],
+        Binds: [`${dir}:/data`],
         // Cap the container, not just the JVM: without this, memory_stats.limit
         // reports total host RAM, so the UI showed "x / 16G" for a 2G server —
         // and nothing actually stopped it from using all 16G. MemorySwap is
@@ -129,7 +129,7 @@ export class DockerService {
   }
 
   dataDir(id: string): string {
-    return path.join(this.dataRoot, id, 'data');
+    return dataDirOf(this.dataRoot, id);
   }
 
   async logs(
