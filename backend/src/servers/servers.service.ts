@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { ServerRepository, ServerRecord } from './server.repository';
 import { DockerService, ContainerStatus } from './docker.service';
 import { toItzgEnv, Loader } from './provisioning';
@@ -119,6 +120,13 @@ export class ServersService {
         .catch(() => undefined);
     }
     await this.serverRepository.delete(id);
+    // The row is gone, so nothing can address these files any more. Removing
+    // the whole per-server root takes data/ and backups/ together; leaving it
+    // behind leaked a full server tree on every delete.
+    await rm(this.dockerService.serverRoot(id), {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
   }
 
   async resolveContainerId(id: string): Promise<string> {

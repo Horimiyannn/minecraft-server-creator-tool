@@ -14,6 +14,7 @@ const fakeDocker: Partial<DockerService> = {
   restart: jest.fn().mockResolvedValue(undefined),
   remove: jest.fn().mockResolvedValue(undefined),
   inspect: jest.fn().mockResolvedValue({ running: false, status: 'exited' }),
+  serverRoot: jest.fn().mockReturnValue('/nonexistent/mc-e2e-root'),
 };
 
 describe('Servers (e2e)', () => {

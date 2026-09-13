@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir } from 'node:fs/promises';
 import Docker from 'dockerode';
-import { dataDir as dataDirOf } from './paths';
+import { dataDir as dataDirOf, serverRoot as serverRootOf } from './paths';
 
 export interface CreateContainerOptions {
   id: string;
@@ -130,6 +130,10 @@ export class DockerService {
 
   dataDir(id: string): string {
     return dataDirOf(this.dataRoot, id);
+  }
+
+  serverRoot(id: string): string {
+    return serverRootOf(this.dataRoot, id);
   }
 
   async logs(

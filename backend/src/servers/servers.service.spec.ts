@@ -1,4 +1,7 @@
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { access, mkdir, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { ServersService } from './servers.service';
 import { ServerRepository, ServerRecord } from './server.repository';
 import { DockerService } from './docker.service';
@@ -41,6 +44,7 @@ function makeDocker(): jest.Mocked<DockerService> {
     remove: jest.fn().mockResolvedValue(undefined),
     inspect: jest.fn(),
     rconEndpoint: jest.fn(),
+    serverRoot: jest.fn().mockReturnValue('/nonexistent/mc-test-root'),
   } as unknown as jest.Mocked<DockerService>;
 }
 
@@ -190,6 +194,21 @@ describe('ServersService lifecycle', () => {
     await svc.deleteServer('srv1');
     expect(docker.remove).toHaveBeenCalledWith('c123');
     expect(repo.delete).toHaveBeenCalledWith('srv1');
+  });
+
+  it('deleteServer removes the server data root so files and backups do not leak', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'mcdel-'));
+    await mkdir(path.join(root, 'data', 'world'), { recursive: true });
+    const repo = makeRepo();
+    const docker = makeDocker();
+    docker.serverRoot.mockReturnValue(root);
+    repo.findById.mockResolvedValue(record({ containerId: 'c123' }));
+    const svc = new ServersService(repo, docker);
+
+    await svc.deleteServer('srv1');
+
+    expect(docker.serverRoot).toHaveBeenCalledWith('srv1');
+    await expect(access(root)).rejects.toThrow();
   });
 });
 
