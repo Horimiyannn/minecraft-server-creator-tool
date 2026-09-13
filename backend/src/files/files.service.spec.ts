@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   NotFoundException,
   UnsupportedMediaTypeException,
@@ -116,5 +117,23 @@ describe('FilesService', () => {
       NotFoundException,
     );
     expect(list).not.toHaveBeenCalled();
+  });
+
+  it('turns a traversal attempt into a 400 instead of a 500', async () => {
+    const { filesService, fs } = makeService();
+    fs.list.mockRejectedValue(
+      new PathError('path escapes the server directory'),
+    );
+    await expect(filesService.list('s1', '..')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('caps search results and defaults a junk limit', async () => {
+    const { filesService, fs } = makeService();
+    fs.search.mockResolvedValue([]);
+    await filesService.search('s1', 'toml', '9999');
+    await filesService.search('s1', 'toml', 'abc');
+    expect(fs.search.mock.calls.map((call) => call[2])).toEqual([500, 100]);
   });
 });

@@ -8,10 +8,12 @@ import {
 import { ArchiveService } from './archive.service';
 import { FileEntry, ServerFsService } from './server-fs.service';
 import { ServersService } from '../servers/servers.service';
+import { PathError } from './path';
 
 /** Editing cap. Anything larger is a download, not a config file. */
 export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 export const MAX_SEARCH_RESULTS = 500;
+const DEFAULT_SEARCH_RESULTS = 100;
 
 export interface BulkResult {
   path: string;
@@ -29,7 +31,7 @@ export class FilesService {
 
   async list(serverId: string, rel: string): Promise<FileEntry[]> {
     await this.serversService.assertServerExists(serverId);
-    return this.serverFsService.list(serverId, rel);
+    return this.guarded(() => this.serverFsService.list(serverId, rel));
   }
 
   async readText(
@@ -37,27 +39,29 @@ export class FilesService {
     rel: string,
   ): Promise<{ content: string; mtimeMs: number }> {
     await this.serversService.assertServerExists(serverId);
-    const info = await this.serverFsService.stat(serverId, rel);
-    if (info.type === 'dir')
-      throw new BadRequestException('path is a directory');
-    if (info.sizeBytes > MAX_TEXT_BYTES) {
-      throw new PayloadTooLargeException(
-        'file is larger than 2 MB — download it instead',
+    return this.guarded(async () => {
+      const info = await this.serverFsService.stat(serverId, rel);
+      if (info.type === 'dir')
+        throw new BadRequestException('path is a directory');
+      if (info.sizeBytes > MAX_TEXT_BYTES) {
+        throw new PayloadTooLargeException(
+          'file is larger than 2 MB — download it instead',
+        );
+      }
+      const read = await this.serverFsService.readText(
+        serverId,
+        rel,
+        MAX_TEXT_BYTES,
       );
-    }
-    const read = await this.serverFsService.readText(
-      serverId,
-      rel,
-      MAX_TEXT_BYTES,
-    );
-    // A NUL byte in the first chunk is the cheap, reliable binary tell; jars,
-    // .dat and region files all trip it, plain configs never do.
-    if (read.content.slice(0, 8192).includes('\0')) {
-      throw new UnsupportedMediaTypeException(
-        'file is binary — download it instead',
-      );
-    }
-    return read;
+      // A NUL byte in the first chunk is the cheap, reliable binary tell; jars,
+      // .dat and region files all trip it, plain configs never do.
+      if (read.content.slice(0, 8192).includes('\0')) {
+        throw new UnsupportedMediaTypeException(
+          'file is binary — download it instead',
+        );
+      }
+      return read;
+    });
   }
 
   async writeText(
@@ -67,31 +71,39 @@ export class FilesService {
     mtimeMs?: number,
   ): Promise<{ mtimeMs: number }> {
     await this.serversService.assertServerExists(serverId);
-    if (mtimeMs !== undefined) {
-      const current = await this.serverFsService
-        .stat(serverId, rel)
-        .catch(() => null);
-      if (current && current.mtimeMs !== mtimeMs) {
-        throw new ConflictException({
-          code: 'FILE_CHANGED',
-          message: 'file changed on disk since it was opened',
-          mtimeMs: current.mtimeMs,
-        });
+    return this.guarded(async () => {
+      if (mtimeMs !== undefined) {
+        const current = await this.serverFsService
+          .stat(serverId, rel)
+          .catch(() => null);
+        if (current && current.mtimeMs !== mtimeMs) {
+          throw new ConflictException({
+            code: 'FILE_CHANGED',
+            message: 'file changed on disk since it was opened',
+            mtimeMs: current.mtimeMs,
+          });
+        }
       }
-    }
-    return {
-      mtimeMs: await this.serverFsService.writeText(serverId, rel, content),
-    };
+      return {
+        mtimeMs: await this.serverFsService.writeText(serverId, rel, content),
+      };
+    });
   }
 
-  async mkdir(serverId: string, rel: string): Promise<void> {
+  async mkdir(serverId: string, rel: string): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    await this.serverFsService.mkdir(serverId, rel);
+    await this.guarded(() => this.serverFsService.mkdir(serverId, rel));
+    return { ok: true };
   }
 
-  async rename(serverId: string, from: string, to: string): Promise<void> {
+  async rename(
+    serverId: string,
+    from: string,
+    to: string,
+  ): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    await this.serverFsService.rename(serverId, from, to);
+    await this.guarded(() => this.serverFsService.rename(serverId, from, to));
+    return { ok: true };
   }
 
   /**
@@ -113,38 +125,64 @@ export class FilesService {
     return results;
   }
 
+  /** `limit` arrives as a raw query string; junk falls back to the default. */
   async search(
     serverId: string,
     query: string,
-    limit: number,
+    limit?: string | number,
   ): Promise<string[]> {
     await this.serversService.assertServerExists(serverId);
-    return this.serverFsService.search(
-      serverId,
-      query,
-      Math.min(limit, MAX_SEARCH_RESULTS),
+    const wanted = Number(limit) || DEFAULT_SEARCH_RESULTS;
+    return this.guarded(() =>
+      this.serverFsService.search(
+        serverId,
+        query ?? '',
+        Math.min(wanted, MAX_SEARCH_RESULTS),
+      ),
     );
   }
 
-  async extract(serverId: string, rel: string, dest: string): Promise<void> {
+  async extract(
+    serverId: string,
+    rel: string,
+    dest: string,
+  ): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    const zip = await this.serverFsService.resolve(serverId, rel);
-    const target = await this.serverFsService.resolve(serverId, dest);
-    await this.archiveService.extractZip(zip, target);
+    await this.guarded(async () => {
+      const zip = await this.serverFsService.resolve(serverId, rel);
+      const target = await this.serverFsService.resolve(serverId, dest);
+      await this.archiveService.extractZip(zip, target);
+    });
+    return { ok: true };
   }
 
   async compress(
     serverId: string,
     paths: string[],
     dest: string,
-  ): Promise<void> {
+  ): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    const destPath = await this.serverFsService.resolve(serverId, dest);
-    await this.archiveService.createZip(
-      this.serverFsService.root(serverId),
-      paths,
-      destPath,
-    );
+    await this.guarded(async () => {
+      const destPath = await this.serverFsService.resolve(serverId, dest);
+      await this.archiveService.createZip(
+        this.serverFsService.root(serverId),
+        paths,
+        destPath,
+      );
+    });
+    return { ok: true };
+  }
+
+  /** A guard rejection is the client's bad input, never a 500. */
+  private async guarded<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof PathError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import { ServersModule } from './servers/servers.module';
 import { VersionsModule } from './versions/versions.module';
 import { ConsoleModule } from './console/console.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { FilesModule } from './files/files.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MetricsModule } from './metrics/metrics.module';
     VersionsModule,
     ConsoleModule,
     MetricsModule,
+    FilesModule,
   ],
 })
 export class AppModule {}
