@@ -40,3 +40,23 @@ export async function mockBackend(page: Page) {
     }),
   );
 }
+
+// Detail + file-manager routes for the Files tab. Registered after
+// mockBackend, so these win (Playwright matches newest-first).
+export async function mockFiles(page: Page) {
+  // Pinned to the API origin: a bare `**/servers/s1` glob also matches the
+  // page navigation to :3000/servers/s1 and would answer it with JSON.
+  await page.route('http://localhost:3001/servers/s1', (r) =>
+    r.fulfill({ json: { ...server, live: null } }),
+  );
+  await page.route('**/servers/s1/files?path=*', (r) =>
+    r.fulfill({
+      json: [
+        { name: 'server.properties', type: 'file', sizeBytes: 20, mtimeMs: 1 },
+      ],
+    }),
+  );
+  await page.route('**/servers/s1/files/content*', (r) =>
+    r.fulfill({ json: { content: 'level-name=world', mtimeMs: 1 } }),
+  );
+}

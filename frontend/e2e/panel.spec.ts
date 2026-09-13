@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockBackend } from './mocks';
+import { mockBackend, mockFiles } from './mocks';
 
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
@@ -48,4 +48,28 @@ test('closes the create modal with Escape', async ({ page }) => {
   await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
+});
+
+test('edits a config file from the Files tab', async ({ page }) => {
+  await mockFiles(page);
+  const saves: unknown[] = [];
+  await page.route('**/servers/s1/files/content*', (r) => {
+    if (r.request().method() !== 'PUT') return r.fallback();
+    saves.push(r.request().postDataJSON());
+    return r.fulfill({ json: { mtimeMs: 2 } });
+  });
+
+  await page.goto('/servers/s1');
+  await page.getByRole('tab', { name: 'Files' }).click();
+  await page.getByRole('button', { name: 'server.properties' }).click();
+  const editor = page.getByRole('textbox', { name: 'server.properties' });
+  await expect(editor).toHaveValue('level-name=world');
+  await editor.fill('level-name=new');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect
+    .poll(() => saves)
+    .toEqual([
+      { path: 'server.properties', content: 'level-name=new', mtimeMs: 1 },
+    ]);
 });

@@ -110,5 +110,8 @@ cross-origin with `credentials:'include'` (backend `enableCors`).
   not in pre-push).
 - Env: `NEXT_PUBLIC_API_URL` (default `http://localhost:3001`). Backend needs
   `FRONTEND_ORIGIN` (default `http://localhost:3000`).
+- `src/modules/files` — the server Files tab: browse, edit (mtime conflict
+  → 409 warning), upload/download, bulk delete, search, zip extract/compress
+  over `/servers/:id/files`.
 - Boundaries: `frontend/.fallowrc.json` zones + ESLint `no-restricted-imports`.
   A module's `ui/` is private — never import `@/modules/*/ui` from outside it.

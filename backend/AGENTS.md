@@ -34,6 +34,16 @@ file only adds backend detail on top of that.
   data-dir size every 2s and emits `stats` (cpuPct / memUsedMb / memLimitMb /
   diskMb); `leave` or disconnect stops it. `metrics.ts` holds the pure
   CPU%/mem math; `MetricsService.collect` adds disk usage.
+- `files/` — `FilesController` (guarded REST, `/servers/:id/files`) →
+  `FilesService` (caps, mtime conflict detection, bulk results, `PathError` → 400) → `ServerFsService` (the ONLY place `node:fs` is used for server data)
+  - `ArchiveService` (the ONLY importer of `yauzl` / `archiver`). `path.ts`
+    holds the pure `resolveInRoot()` traversal guard; every user-supplied path
+    and every archive entry name passes through it, and `ServerFsService.resolve`
+    adds a realpath check so symlinks cannot escape. Per-server directory layout
+    lives in `servers/paths.ts` (`serverRoot` / `dataDir` / `backupsDir` /
+    `stagingDir`); deleting a server removes its whole root. Optional env:
+    `MAX_UPLOAD_MB` (default 512). `archiver` is pinned to v7 — v8 dropped the
+    `archiver('zip')` factory.
 - Both gateways authenticate at the socket.io handshake via
   `SocketAuthService` (exported from `auth/`): it reads the `mcp_token` cookie
   and verifies the JWT; unauthenticated sockets are disconnected before any
