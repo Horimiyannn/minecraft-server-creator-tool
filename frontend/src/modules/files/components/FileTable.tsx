@@ -2,6 +2,7 @@
 import { Checkbox } from '@ui';
 import type { FileEntry } from '@/types';
 import { downloadUrl } from '../api';
+import { DownloadIcon, PencilIcon, TrashIcon } from './icons';
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,6 +15,13 @@ function humanSize(bytes: number): string {
   }
   return `${value.toFixed(1)} ${units[unit]}`;
 }
+
+// One hover colour per button: two competing hover:text-* classes would be
+// resolved by stylesheet order, not by the order written here.
+const iconButton =
+  'inline-flex rounded p-1 text-neutral-400 hover:bg-neutral-700';
+const neutralIcon = `${iconButton} hover:text-white`;
+const dangerIcon = `${iconButton} hover:text-red-400`;
 
 export function FileTable({
   entries,
@@ -38,60 +46,75 @@ export function FileTable({
     <table className="w-full text-sm">
       <thead className="text-left text-neutral-500">
         <tr>
-          <th className="w-8" />
+          <th className="w-10" />
           <th>Name</th>
           <th className="w-28">Size</th>
           <th className="w-44">Modified</th>
-          <th className="w-52" />
+          <th className="w-20" />
         </tr>
       </thead>
       <tbody>
         {entries.map((entry) => (
-          <tr key={entry.name} className="border-t border-neutral-800">
-            <td>
+          // Hover lights the whole row so the target of an action is obvious;
+          // even rows are faintly striped to keep long listings readable.
+          <tr
+            key={entry.name}
+            className="border-t border-neutral-800 transition-colors even:bg-neutral-900/60 hover:bg-neutral-800"
+          >
+            <td className="py-1.5 pl-2">
               <Checkbox
                 checked={selected.has(entry.name)}
                 onChange={() => onToggle(entry.name)}
               />
             </td>
-            <td>
-              <button
-                type="button"
-                className="hover:underline"
-                onClick={() => onOpen(entry)}
-              >
-                {entry.type === 'dir' && <span aria-hidden="true">📁 </span>}
-                {entry.name}
-              </button>
+            <td className="py-1.5">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="hover:underline"
+                  onClick={() => onOpen(entry)}
+                >
+                  {entry.type === 'dir' && <span aria-hidden="true">📁 </span>}
+                  {entry.name}
+                </button>
+                <button
+                  type="button"
+                  className={neutralIcon}
+                  aria-label={`Rename ${entry.name}`}
+                  title="Rename"
+                  onClick={() => onRename(entry)}
+                >
+                  <PencilIcon />
+                </button>
+              </div>
             </td>
-            <td>{entry.type === 'dir' ? '—' : humanSize(entry.sizeBytes)}</td>
-            <td>{new Date(entry.mtimeMs).toLocaleString()}</td>
-            <td>
-              <div className="flex items-center gap-3 text-neutral-400">
+            <td className="py-1.5">
+              {entry.type === 'dir' ? '—' : humanSize(entry.sizeBytes)}
+            </td>
+            <td className="py-1.5">
+              {new Date(entry.mtimeMs).toLocaleString()}
+            </td>
+            <td className="py-1.5 pr-2">
+              <div className="flex items-center justify-end gap-1">
                 <a
-                  className="hover:text-white"
+                  className={neutralIcon}
+                  aria-label={`Download ${entry.name}`}
+                  title="Download"
                   href={downloadUrl(
                     serverId,
                     basePath ? `${basePath}/${entry.name}` : entry.name,
                   )}
                 >
-                  Download
+                  <DownloadIcon />
                 </a>
                 <button
                   type="button"
-                  className="hover:text-white"
-                  aria-label={`Rename ${entry.name}`}
-                  onClick={() => onRename(entry)}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="hover:text-red-400"
+                  className={dangerIcon}
                   aria-label={`Delete ${entry.name}`}
+                  title="Delete"
                   onClick={() => onDelete(entry)}
                 >
-                  Delete
+                  <TrashIcon />
                 </button>
               </div>
             </td>

@@ -70,4 +70,34 @@ describe('FileTable', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete mods' }));
     expect(onDelete).toHaveBeenCalledWith(entries[0]);
   });
+
+  it('puts rename beside the name and shows actions as labelled icons', () => {
+    render(
+      <FileTable
+        entries={entries}
+        selected={new Set()}
+        onToggle={jest.fn()}
+        onOpen={jest.fn()}
+        onRename={jest.fn()}
+        onDelete={jest.fn()}
+        serverId="s1"
+      />,
+    );
+
+    const nameCell = screen
+      .getByRole('button', { name: 'server.properties' })
+      .closest('td');
+    expect(nameCell).toContainElement(
+      screen.getByRole('button', { name: 'Rename server.properties' }),
+    );
+    expect(
+      screen.getByRole('link', { name: 'Download server.properties' }),
+    ).toHaveAttribute(
+      'href',
+      expect.stringContaining('path=server.properties'),
+    );
+    for (const word of ['Download', 'Rename', 'Delete']) {
+      expect(screen.queryByText(word)).not.toBeInTheDocument();
+    }
+  });
 });
