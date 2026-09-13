@@ -6,3 +6,5 @@ export { Card } from './Card';
 export { Spinner } from './Spinner';
 export { Tabs } from './Tabs';
 export { Modal } from './Modal';
+export { Checkbox } from './Checkbox';
+export { ConfirmDialog } from './ConfirmDialog';
