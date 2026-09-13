@@ -30,6 +30,7 @@ function makeService(overrides: Partial<ServerFsService> = {}): {
     root: jest.fn().mockReturnValue('/srv/mc/s1/data'),
     resolve: jest.fn(),
     importFile: jest.fn(),
+    createFile: jest.fn(),
     createReadStream: jest.fn(),
     ...overrides,
   } as unknown as jest.Mocked<ServerFsService>;
@@ -222,5 +223,23 @@ describe('FilesService', () => {
     expect(file.getHeaders().length).toBe(3);
     expect(archiveService.createZip).not.toHaveBeenCalled();
     file.getStream().resume();
+  });
+  it('creates a new empty file', async () => {
+    const { filesService, fs } = makeService();
+    fs.createFile.mockResolvedValue(undefined);
+    await expect(
+      filesService.createFile('s1', 'config/new.toml'),
+    ).resolves.toEqual({ ok: true });
+    expect(fs.createFile).toHaveBeenCalledWith('s1', 'config/new.toml');
+  });
+
+  it('409s creating a file whose name is already taken', async () => {
+    const { filesService, fs } = makeService();
+    fs.createFile.mockRejectedValue(
+      Object.assign(new Error('exists'), { code: 'EEXIST' }),
+    );
+    await expect(
+      filesService.createFile('s1', 'eula.txt'),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

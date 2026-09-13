@@ -21,6 +21,7 @@ describe('Files routes (e2e)', () => {
     writeText: jest.fn().mockResolvedValue({ mtimeMs: 5 }),
     removeMany: jest.fn().mockResolvedValue([{ path: 'a', ok: true }]),
     saveUpload: jest.fn().mockResolvedValue({ ok: true }),
+    createFile: jest.fn().mockResolvedValue({ ok: true }),
     openDownload: jest.fn().mockImplementation(
       async () =>
         new StreamableFile(Buffer.from('hi'), {
@@ -126,5 +127,15 @@ describe('Files routes (e2e)', () => {
       .expect(200);
     expect(res.headers['content-disposition']).toContain('a.txt');
     expect(filesService.openDownload).toHaveBeenCalledWith('s1', 'a.txt');
+  });
+  it('creates a file', async () => {
+    await request(app.getHttpServer())
+      .post('/servers/s1/files/file')
+      .send({ path: 'config/new.toml' })
+      .expect(201);
+    expect(filesService.createFile).toHaveBeenCalledWith(
+      's1',
+      'config/new.toml',
+    );
   });
 });

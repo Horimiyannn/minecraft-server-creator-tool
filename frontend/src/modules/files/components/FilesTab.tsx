@@ -61,7 +61,7 @@ export function FilesTab({ serverId }: { serverId: string }) {
         serverId={serverId}
         path={path}
         selected={selected}
-        onSearchSelect={setEditing}
+        onOpenFile={setEditing}
       />
       {isLoading && <Spinner />}
       {isError && <p className="text-red-400">Could not read this folder.</p>}

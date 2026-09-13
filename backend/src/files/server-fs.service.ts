@@ -143,6 +143,13 @@ export class ServerFsService {
     await mkdir(await this.resolve(serverId, rel), { recursive: true });
   }
 
+  /** Create an empty file; fails with EEXIST rather than clobbering one. */
+  async createFile(serverId: string, rel: string): Promise<void> {
+    const target = await this.resolve(serverId, rel);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, '', { flag: 'wx' });
+  }
+
   async rename(serverId: string, from: string, to: string): Promise<void> {
     const src = await this.resolve(serverId, from);
     const dest = await this.resolve(serverId, to);

@@ -108,6 +108,23 @@ export class FilesService {
     return { ok: true };
   }
 
+  /** New empty file. Unlike a save, it never overwrites what is already there. */
+  async createFile(serverId: string, rel: string): Promise<{ ok: true }> {
+    await this.serversService.assertServerExists(serverId);
+    await this.guarded(async () => {
+      try {
+        await this.serverFsService.createFile(serverId, rel);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        throw new ConflictException({
+          code: 'FILE_EXISTS',
+          message: 'a file or folder with that name already exists',
+        });
+      }
+    });
+    return { ok: true };
+  }
+
   async rename(
     serverId: string,
     from: string,

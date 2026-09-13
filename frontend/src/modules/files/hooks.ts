@@ -4,6 +4,7 @@ import { QUERY_KEYS } from '@/constants';
 import type { FileContent, FileEntry } from '@/types';
 import {
   compressPaths,
+  createFile,
   deletePaths,
   extractArchive,
   listFiles,
@@ -49,6 +50,10 @@ export function useFileOps(serverId: string, path: string) {
   return {
     mkdir: useMutation({
       mutationFn: (dir: string) => makeDir(serverId, dir),
+      onSuccess: invalidate,
+    }),
+    createFile: useMutation({
+      mutationFn: (file: string) => createFile(serverId, file),
       onSuccess: invalidate,
     }),
     rename: useMutation({

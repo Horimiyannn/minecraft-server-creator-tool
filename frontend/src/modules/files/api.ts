@@ -27,6 +27,12 @@ export const makeDir = (serverId: string, path: string) =>
     body: JSON.stringify({ path }),
   });
 
+export const createFile = (serverId: string, path: string) =>
+  api<{ ok: true }>(`${base(serverId)}/file`, {
+    method: 'POST',
+    body: JSON.stringify({ path }),
+  });
+
 export const renamePath = (serverId: string, from: string, to: string) =>
   api<{ ok: true }>(`${base(serverId)}/rename`, {
     method: 'POST',

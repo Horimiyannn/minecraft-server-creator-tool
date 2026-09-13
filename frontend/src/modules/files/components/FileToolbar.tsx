@@ -8,12 +8,13 @@ export function FileToolbar({
   serverId,
   path,
   selected,
-  onSearchSelect,
+  onOpenFile,
 }: {
   serverId: string;
   path: string;
   selected: Set<string>;
-  onSearchSelect: (path: string) => void;
+  /** Open a file in the editor: a search hit, or a file just created. */
+  onOpenFile: (path: string) => void;
 }) {
   const ops = useFileOps(serverId, path);
   const [query, setQuery] = useState('');
@@ -51,6 +52,18 @@ export function FileToolbar({
           }}
         >
           New folder
+        </Button>
+        <Button
+          variant="ghost"
+          loading={ops.createFile.isPending}
+          onClick={() => {
+            const name = window.prompt('File name');
+            if (!name) return;
+            const file = join(name);
+            ops.createFile.mutate(file, { onSuccess: () => onOpenFile(file) });
+          }}
+        >
+          New file
         </Button>
         {selected.size === 1 &&
           [...selected][0].toLowerCase().endsWith('.zip') && (
@@ -93,7 +106,7 @@ export function FileToolbar({
                     className="w-full px-2 py-1 text-left hover:bg-neutral-800"
                     onClick={() => {
                       setQuery('');
-                      onSearchSelect(hit);
+                      onOpenFile(hit);
                     }}
                   >
                     {hit}

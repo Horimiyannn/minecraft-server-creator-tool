@@ -63,6 +63,14 @@ export class FilesController {
     return this.filesService.mkdir(id, dto.path);
   }
 
+  @Post('file')
+  createFile(
+    @Param('id') id: string,
+    @Body() dto: FilePathDto,
+  ): Promise<{ ok: true }> {
+    return this.filesService.createFile(id, dto.path);
+  }
+
   @Post('rename')
   rename(
     @Param('id') id: string,
