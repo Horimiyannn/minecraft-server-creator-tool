@@ -6,8 +6,13 @@ import {
   Post,
   Put,
   Query,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { tmpdir } from 'node:os';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BulkResult, FilesService } from './files.service';
 import { FileEntry } from './server-fs.service';
@@ -17,6 +22,9 @@ import { RenameDto } from './dto/rename.dto';
 import { PathsDto } from './dto/paths.dto';
 import { ExtractDto } from './dto/extract.dto';
 import { CompressDto } from './dto/compress.dto';
+
+/** Upload cap in MB, read once at boot (the interceptor config is static). */
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB) || 512;
 
 @UseGuards(JwtAuthGuard)
 @Controller('servers/:id/files')
@@ -86,6 +94,29 @@ export class FilesController {
     @Body() dto: ExtractDto,
   ): Promise<{ ok: true }> {
     return this.filesService.extract(id, dto.path, dto.dest);
+  }
+
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      dest: tmpdir(),
+      limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
+    }),
+  )
+  upload(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Query('path') destDir = '',
+  ): Promise<{ ok: true }> {
+    return this.filesService.saveUpload(id, destDir, file);
+  }
+
+  @Get('download')
+  download(
+    @Param('id') id: string,
+    @Query('path') path = '',
+  ): Promise<StreamableFile> {
+    return this.filesService.openDownload(id, path);
   }
 
   @Post('compress')

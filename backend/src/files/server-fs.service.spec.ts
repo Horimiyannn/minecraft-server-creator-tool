@@ -98,4 +98,18 @@ describe('ServerFsService', () => {
     ]);
     expect(await svc.search(SERVER_ID, 'toml', 1)).toHaveLength(1);
   });
+
+  it('imports a file from outside the root into place', async () => {
+    const { svc, data } = await makeService();
+    const outside = await mkdtemp(path.join(tmpdir(), 'mcup-'));
+    const src = path.join(outside, 'upload');
+    await writeFile(src, 'jar');
+
+    await svc.importFile(SERVER_ID, 'mods/cool.jar', src);
+
+    expect(await readFile(path.join(data, 'mods/cool.jar'), 'utf8')).toBe(
+      'jar',
+    );
+    await expect(readFile(src)).rejects.toThrow();
+  });
 });

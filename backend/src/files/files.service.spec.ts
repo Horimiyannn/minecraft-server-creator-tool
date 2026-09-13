@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +16,7 @@ import { PathError } from './path';
 function makeService(overrides: Partial<ServerFsService> = {}): {
   filesService: FilesService;
   fs: jest.Mocked<ServerFsService>;
+  archiveService: jest.Mocked<ArchiveService>;
 } {
   const fs = {
     list: jest.fn(),
@@ -25,6 +29,8 @@ function makeService(overrides: Partial<ServerFsService> = {}): {
     search: jest.fn(),
     root: jest.fn().mockReturnValue('/srv/mc/s1/data'),
     resolve: jest.fn(),
+    importFile: jest.fn(),
+    createReadStream: jest.fn(),
     ...overrides,
   } as unknown as jest.Mocked<ServerFsService>;
   const archiveService = {
@@ -37,6 +43,7 @@ function makeService(overrides: Partial<ServerFsService> = {}): {
   return {
     filesService: new FilesService(fs, archiveService, serversService),
     fs,
+    archiveService,
   };
 }
 
@@ -135,5 +142,85 @@ describe('FilesService', () => {
     await filesService.search('s1', 'toml', '9999');
     await filesService.search('s1', 'toml', 'abc');
     expect(fs.search.mock.calls.map((call) => call[2])).toEqual([500, 100]);
+  });
+
+  it('moves an upload into the destination directory', async () => {
+    const { filesService, fs } = makeService();
+    fs.importFile.mockResolvedValue(undefined);
+
+    await expect(
+      filesService.saveUpload('s1', 'mods', {
+        path: '/tmp/up123',
+        originalname: 'cool-mod.jar',
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fs.importFile).toHaveBeenCalledWith(
+      's1',
+      'mods/cool-mod.jar',
+      '/tmp/up123',
+    );
+  });
+
+  it.each(['../evil.jar', 'a/b.jar', '..', ''])(
+    'refuses upload filename %p',
+    async (originalname) => {
+      const { filesService, fs } = makeService();
+      await expect(
+        filesService.saveUpload('s1', 'mods', {
+          path: '/tmp/up123',
+          originalname,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(fs.importFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it('400s an upload request that carried no file', async () => {
+    const { filesService } = makeService();
+    await expect(
+      filesService.saveUpload('s1', 'mods', undefined),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('zips a directory for download', async () => {
+    const { filesService, fs, archiveService } = makeService();
+    fs.stat.mockResolvedValue({
+      name: 'config',
+      type: 'dir',
+      sizeBytes: 0,
+      mtimeMs: 1,
+    });
+    archiveService.createZip.mockImplementation(async (_base, _paths, dest) => {
+      await writeFile(dest, 'zip');
+    });
+
+    const file = await filesService.openDownload('s1', 'config');
+
+    expect(file.getHeaders().disposition).toContain('config.zip');
+    file.getStream().resume(); // drain so the temp zip is cleaned up
+  });
+
+  it('streams a plain file for download as-is', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mcdl-'));
+    const onDisk = path.join(dir, 'server.properties');
+    await writeFile(onDisk, 'a=1');
+    const { createReadStream } =
+      jest.requireActual<typeof import('node:fs')>('node:fs');
+    const { filesService, fs, archiveService } = makeService();
+    fs.stat.mockResolvedValue({
+      name: 'server.properties',
+      type: 'file',
+      sizeBytes: 3,
+      mtimeMs: 1,
+    });
+    fs.createReadStream.mockResolvedValue(createReadStream(onDisk));
+
+    const file = await filesService.openDownload('s1', 'server.properties');
+
+    expect(file.getHeaders().disposition).toContain('server.properties');
+    expect(file.getHeaders().length).toBe(3);
+    expect(archiveService.createZip).not.toHaveBeenCalled();
+    file.getStream().resume();
   });
 });

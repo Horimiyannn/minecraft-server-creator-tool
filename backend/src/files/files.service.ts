@@ -3,8 +3,14 @@ import {
   ConflictException,
   Injectable,
   PayloadTooLargeException,
+  StreamableFile,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { ArchiveService } from './archive.service';
 import { FileEntry, ServerFsService } from './server-fs.service';
 import { ServersService } from '../servers/servers.service';
@@ -14,6 +20,12 @@ import { PathError } from './path';
 export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 export const MAX_SEARCH_RESULTS = 500;
 const DEFAULT_SEARCH_RESULTS = 100;
+
+/** What Multer leaves behind for an upload: a temp file and the client's name. */
+export interface UploadedTempFile {
+  path: string;
+  originalname: string;
+}
 
 export interface BulkResult {
   path: string;
@@ -173,6 +185,82 @@ export class FilesService {
     return { ok: true };
   }
 
+  /**
+   * Multer has already streamed the body to a temp file; this validates the
+   * client-supplied name and moves the file into place. The temp file is
+   * removed on every failure so rejected uploads don't pile up in tmp.
+   */
+  async saveUpload(
+    serverId: string,
+    destDir: string,
+    file: UploadedTempFile | undefined,
+  ): Promise<{ ok: true }> {
+    if (!file) throw new BadRequestException('no file was uploaded');
+    try {
+      await this.serversService.assertServerExists(serverId);
+      const name = file.originalname;
+      if (
+        !name ||
+        name === '.' ||
+        name === '..' ||
+        name !== path.basename(name) ||
+        name.includes('\0')
+      ) {
+        throw new BadRequestException('invalid upload filename');
+      }
+      await this.guarded(() =>
+        this.serverFsService.importFile(
+          serverId,
+          path.join(destDir, name),
+          file.path,
+        ),
+      );
+      return { ok: true };
+    } catch (error) {
+      await rm(file.path, { force: true });
+      throw error;
+    }
+  }
+
+  async openDownload(serverId: string, rel: string): Promise<StreamableFile> {
+    await this.serversService.assertServerExists(serverId);
+    return this.guarded(async () => {
+      const info = await this.serverFsService.stat(serverId, rel);
+      if (info.type === 'file') {
+        return new StreamableFile(
+          await this.serverFsService.createReadStream(serverId, rel),
+          {
+            type: 'application/octet-stream',
+            disposition: attachment(info.name),
+            length: info.sizeBytes,
+          },
+        );
+      }
+      // Directories are zipped into a temp file first: streaming an archive
+      // while it is still being built hides errors behind a 200 already sent.
+      const zipPath = path.join(
+        tmpdir(),
+        `mc-dl-${randomBytes(8).toString('hex')}.zip`,
+      );
+      try {
+        await this.archiveService.createZip(
+          this.serverFsService.root(serverId),
+          [rel],
+          zipPath,
+        );
+      } catch (error) {
+        await rm(zipPath, { force: true });
+        throw error;
+      }
+      const stream = createReadStream(zipPath);
+      stream.on('close', () => void rm(zipPath, { force: true }));
+      return new StreamableFile(stream, {
+        type: 'application/zip',
+        disposition: attachment(`${info.name}.zip`),
+      });
+    });
+  }
+
   /** A guard rejection is the client's bad input, never a 500. */
   private async guarded<T>(run: () => Promise<T>): Promise<T> {
     try {
@@ -184,6 +272,11 @@ export class FilesService {
       throw error;
     }
   }
+}
+
+/** RFC 6266 form, so non-ASCII filenames survive the header. */
+function attachment(filename: string): string {
+  return `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 function message(error: unknown): string {

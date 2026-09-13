@@ -1,4 +1,9 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  StreamableFile,
+  ValidationPipe,
+} from '@nestjs/common';
+import { rm } from 'node:fs/promises';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -15,6 +20,14 @@ describe('Files routes (e2e)', () => {
       ]),
     writeText: jest.fn().mockResolvedValue({ mtimeMs: 5 }),
     removeMany: jest.fn().mockResolvedValue([{ path: 'a', ok: true }]),
+    saveUpload: jest.fn().mockResolvedValue({ ok: true }),
+    openDownload: jest.fn().mockImplementation(
+      async () =>
+        new StreamableFile(Buffer.from('hi'), {
+          type: 'application/octet-stream',
+          disposition: "attachment; filename*=UTF-8''a.txt",
+        }),
+    ),
   };
 
   beforeAll(async () => {
@@ -71,5 +84,30 @@ describe('Files routes (e2e)', () => {
       .send({ paths: ['a'] })
       .expect(201);
     expect(res.body).toEqual([{ path: 'a', ok: true }]);
+  });
+  it('hands an uploaded file to the service', async () => {
+    await request(app.getHttpServer())
+      .post('/servers/s1/files/upload?path=mods')
+      .attach('file', Buffer.from('jar'), 'cool.jar')
+      .expect(201);
+    const [id, destDir, file] = filesService.saveUpload.mock.calls[0] as [
+      string,
+      string,
+      { originalname: string; path: string },
+    ];
+    expect([id, destDir, file.originalname]).toEqual([
+      's1',
+      'mods',
+      'cool.jar',
+    ]);
+    await rm(file.path, { force: true }); // the mocked service never moved it
+  });
+
+  it('downloads with an attachment disposition', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/servers/s1/files/download?path=a.txt')
+      .expect(200);
+    expect(res.headers['content-disposition']).toContain('a.txt');
+    expect(filesService.openDownload).toHaveBeenCalledWith('s1', 'a.txt');
   });
 });

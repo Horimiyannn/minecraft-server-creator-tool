@@ -6,6 +6,7 @@ import {
 } from 'node:fs';
 import {
   access,
+  copyFile,
   mkdir,
   readdir,
   readFile,
@@ -16,6 +17,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { Readable } from 'node:stream';
 import * as path from 'node:path';
 import { dataDir } from '../servers/paths';
 import { PathError, resolveInRoot } from './path';
@@ -186,10 +188,28 @@ export class ServerFsService {
     return hits.slice(0, limit);
   }
 
-  async createReadStream(
+  async createReadStream(serverId: string, rel: string): Promise<Readable> {
+    return fsCreateReadStream(await this.resolve(serverId, rel));
+  }
+
+  /**
+   * Move a file from outside the root (an upload's temp file) into place.
+   * The temp dir is often a different mount, so a cross-device rename falls
+   * back to copy + delete.
+   */
+  async importFile(
     serverId: string,
     rel: string,
-  ): Promise<NodeJS.ReadableStream> {
-    return fsCreateReadStream(await this.resolve(serverId, rel));
+    srcPath: string,
+  ): Promise<void> {
+    const target = await this.resolve(serverId, rel);
+    await mkdir(path.dirname(target), { recursive: true });
+    try {
+      await rename(srcPath, target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+      await copyFile(srcPath, target);
+      await rm(srcPath, { force: true });
+    }
   }
 }
