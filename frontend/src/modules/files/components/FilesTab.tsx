@@ -4,12 +4,15 @@ import { Button, ConfirmDialog, Spinner } from '@ui';
 import type { FileEntry } from '@/types';
 import { useFileOps, useFiles } from '../hooks';
 import { Breadcrumb } from './Breadcrumb';
+import { FileEditor } from './FileEditor';
 import { FileTable } from './FileTable';
+import { FileToolbar } from './FileToolbar';
 
 export function FilesTab({ serverId }: { serverId: string }) {
   const [path, setPath] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const { data: entries, isLoading, isError } = useFiles(serverId, path);
   const ops = useFileOps(serverId, path);
 
@@ -31,6 +34,17 @@ export function FilesTab({ serverId }: { serverId: string }) {
 
   function open(entry: FileEntry): void {
     if (entry.type === 'dir') navigate(join(entry.name));
+    else setEditing(join(entry.name));
+  }
+
+  if (editing !== null) {
+    return (
+      <FileEditor
+        serverId={serverId}
+        path={editing}
+        onClose={() => setEditing(null)}
+      />
+    );
   }
 
   return (
@@ -43,6 +57,12 @@ export function FilesTab({ serverId }: { serverId: string }) {
           </Button>
         )}
       </div>
+      <FileToolbar
+        serverId={serverId}
+        path={path}
+        selected={selected}
+        onSearchSelect={setEditing}
+      />
       {isLoading && <Spinner />}
       {isError && <p className="text-red-400">Could not read this folder.</p>}
       {entries && (
