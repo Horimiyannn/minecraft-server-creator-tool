@@ -9,8 +9,9 @@ import {
 } from '@/modules/servers';
 import { ConsoleTab } from '@/modules/console';
 import { MetricsTab } from '@/modules/metrics';
+import { FilesTab } from '@/modules/files';
 
-type TabKey = 'console' | 'metrics' | 'settings';
+type TabKey = 'console' | 'metrics' | 'files' | 'settings';
 
 export default function ServerDetailPage({
   params,
@@ -40,11 +41,13 @@ export default function ServerDetailPage({
         tabs={[
           { key: 'console', label: 'Console' },
           { key: 'metrics', label: 'Metrics' },
+          { key: 'files', label: 'Files' },
           { key: 'settings', label: 'Settings' },
         ]}
       />
       {tab === 'console' && <ConsoleTab serverId={server.id} />}
       {tab === 'metrics' && <MetricsTab serverId={server.id} />}
+      {tab === 'files' && <FilesTab serverId={server.id} />}
       {tab === 'settings' && <SettingsTab server={server} />}
     </div>
   );
