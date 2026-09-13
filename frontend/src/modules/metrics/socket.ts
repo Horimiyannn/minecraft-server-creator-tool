@@ -5,47 +5,91 @@ import type { ServerStats } from '@/types';
 
 type Listener = (stats: ServerStats) => void;
 
+/**
+ * How long a room (and the socket itself) is held open after its last
+ * listener goes away. Switching tabs on the server page unmounts MetricsTab,
+ * and without this grace window that tore the socket down and paid for a full
+ * reconnect — plus a fresh backend poll loop — on the way back.
+ */
+const IDLE_GRACE_MS = 10_000;
+
 let socket: Socket | null = null;
 const listeners = new Map<string, Set<Listener>>();
+/** Rooms we have emitted `join` for and not yet left. */
+const joined = new Set<string>();
+const pendingLeave = new Map<string, ReturnType<typeof setTimeout>>();
+let pendingDisconnect: ReturnType<typeof setTimeout> | null = null;
 
 function ensureSocket(): Socket {
   if (socket) return socket;
-  socket = makeSocket('/metrics');
-  socket.on(SOCKET_EVENTS.stats, (payload: ServerStats) => {
+  const s = makeSocket('/metrics');
+  socket = s;
+  s.on(SOCKET_EVENTS.stats, (payload: ServerStats) => {
     listeners.get(payload.serverId)?.forEach((cb) => cb(payload));
   });
-  socket.on('connect', () => {
-    // Re-join every active room after a (re)connect.
-    for (const serverId of listeners.keys()) {
-      socket?.emit(SOCKET_EVENTS.join, { serverId });
+  s.on('connect', () => {
+    // Server-side rooms are gone after a reconnect — re-join every room we
+    // still consider ours.
+    for (const serverId of joined) {
+      s.emit(SOCKET_EVENTS.join, { serverId });
     }
   });
-  return socket;
+  return s;
+}
+
+function teardown(): void {
+  for (const timer of pendingLeave.values()) clearTimeout(timer);
+  pendingLeave.clear();
+  joined.clear();
+  socket?.disconnect();
+  socket = null;
 }
 
 export function subscribeStats(serverId: string, cb: Listener): () => void {
+  if (pendingDisconnect) {
+    clearTimeout(pendingDisconnect);
+    pendingDisconnect = null;
+  }
+  const leaveTimer = pendingLeave.get(serverId);
+  if (leaveTimer) {
+    clearTimeout(leaveTimer);
+    pendingLeave.delete(serverId);
+  }
+
   const s = ensureSocket();
   let set = listeners.get(serverId);
   if (!set) {
     set = new Set();
     listeners.set(serverId, set);
-    s.emit(SOCKET_EVENTS.join, { serverId });
   }
   set.add(cb);
+  // Only join a room we are not already in: a remount inside the grace window
+  // never left it.
+  if (!joined.has(serverId)) {
+    joined.add(serverId);
+    s.emit(SOCKET_EVENTS.join, { serverId });
+  }
 
   return () => {
-    const cur = listeners.get(serverId);
-    if (!cur) return;
-    cur.delete(cb);
-    if (cur.size === 0) {
-      listeners.delete(serverId);
-      s.emit(SOCKET_EVENTS.leave, { serverId });
-    }
-    if (listeners.size === 0) {
-      s.disconnect();
-      socket = null;
+    const current = listeners.get(serverId);
+    if (!current || !current.has(cb)) return; // already released
+    current.delete(cb);
+    if (current.size > 0) return;
+    listeners.delete(serverId);
+
+    pendingLeave.set(
+      serverId,
+      setTimeout(() => {
+        pendingLeave.delete(serverId);
+        joined.delete(serverId);
+        socket?.emit(SOCKET_EVENTS.leave, { serverId });
+      }, IDLE_GRACE_MS),
+    );
+    if (listeners.size === 0 && !pendingDisconnect) {
+      pendingDisconnect = setTimeout(() => {
+        pendingDisconnect = null;
+        teardown();
+      }, IDLE_GRACE_MS);
     }
   };
 }
-
-// ponytail: one shared /metrics socket, ref-counted rooms; disconnect on zero listeners. If unmount/remount churn causes reconnect thrash, add a short idle grace timer before disconnect.
