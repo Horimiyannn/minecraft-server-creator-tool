@@ -22,6 +22,7 @@ describe('Files routes (e2e)', () => {
     removeMany: jest.fn().mockResolvedValue([{ path: 'a', ok: true }]),
     saveUpload: jest.fn().mockResolvedValue({ ok: true }),
     createFile: jest.fn().mockResolvedValue({ ok: true }),
+    rename: jest.fn().mockResolvedValue({ ok: true }),
     openDownload: jest.fn().mockImplementation(
       async () =>
         new StreamableFile(Buffer.from('hi'), {
@@ -103,6 +104,7 @@ describe('Files routes (e2e)', () => {
       .expect(201);
     expect(res.body).toEqual([{ path: 'a', ok: true }]);
   });
+
   it('hands an uploaded file to the service', async () => {
     await request(app.getHttpServer())
       .post('/servers/s1/files/upload?path=mods')
@@ -128,6 +130,7 @@ describe('Files routes (e2e)', () => {
     expect(res.headers['content-disposition']).toContain('a.txt');
     expect(filesService.openDownload).toHaveBeenCalledWith('s1', 'a.txt');
   });
+
   it('creates a file', async () => {
     await request(app.getHttpServer())
       .post('/servers/s1/files/file')
@@ -137,5 +140,13 @@ describe('Files routes (e2e)', () => {
       's1',
       'config/new.toml',
     );
+  });
+
+  it('renames a path', async () => {
+    await request(app.getHttpServer())
+      .post('/servers/s1/files/rename')
+      .send({ from: 'a.txt', to: 'b.txt' })
+      .expect(201);
+    expect(filesService.rename).toHaveBeenCalledWith('s1', 'a.txt', 'b.txt');
   });
 });

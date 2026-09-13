@@ -14,6 +14,14 @@ function renderTab() {
   );
 }
 
+/** The POST the tab sent to `/files<suffix>`, if any. */
+function postTo(suffix: string) {
+  return (global.fetch as jest.Mock).mock.calls.find(
+    ([url, init]) =>
+      init?.method === 'POST' && String(url).includes(`/files${suffix}`),
+  );
+}
+
 describe('FilesTab', () => {
   beforeEach(() => {
     global.fetch = jest.fn().mockResolvedValue({
@@ -44,5 +52,52 @@ describe('FilesTab', () => {
         expect.anything(),
       ),
     );
+  });
+
+  it('renames an entry in place', async () => {
+    const prompt = jest.spyOn(window, 'prompt').mockReturnValue('settings');
+    renderTab();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Rename config' }),
+    );
+
+    await waitFor(() => expect(postTo('/rename')).toBeDefined());
+    expect(JSON.parse(postTo('/rename')![1].body)).toEqual({
+      from: 'config',
+      to: 'settings',
+    });
+    prompt.mockRestore();
+  });
+
+  it('does not rename when the name is unchanged or cancelled', async () => {
+    const prompt = jest
+      .spyOn(window, 'prompt')
+      .mockReturnValueOnce('config')
+      .mockReturnValueOnce(null);
+    renderTab();
+
+    const rename = await screen.findByRole('button', { name: 'Rename config' });
+    await userEvent.click(rename);
+    await userEvent.click(rename);
+
+    expect(postTo('/rename')).toBeUndefined();
+    prompt.mockRestore();
+  });
+
+  it('deletes a single entry only after confirmation', async () => {
+    renderTab();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Delete config' }),
+    );
+    expect(postTo('/delete')).toBeUndefined();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(postTo('/delete')).toBeDefined());
+    expect(JSON.parse(postTo('/delete')![1].body)).toEqual({
+      paths: ['config'],
+    });
   });
 });

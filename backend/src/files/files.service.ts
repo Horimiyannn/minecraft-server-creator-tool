@@ -111,17 +111,9 @@ export class FilesService {
   /** New empty file. Unlike a save, it never overwrites what is already there. */
   async createFile(serverId: string, rel: string): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    await this.guarded(async () => {
-      try {
-        await this.serverFsService.createFile(serverId, rel);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        throw new ConflictException({
-          code: 'FILE_EXISTS',
-          message: 'a file or folder with that name already exists',
-        });
-      }
-    });
+    await this.guarded(() =>
+      refuseExisting(this.serverFsService.createFile(serverId, rel)),
+    );
     return { ok: true };
   }
 
@@ -131,7 +123,9 @@ export class FilesService {
     to: string,
   ): Promise<{ ok: true }> {
     await this.serversService.assertServerExists(serverId);
-    await this.guarded(() => this.serverFsService.rename(serverId, from, to));
+    await this.guarded(() =>
+      refuseExisting(this.serverFsService.rename(serverId, from, to)),
+    );
     return { ok: true };
   }
 
@@ -288,6 +282,19 @@ export class FilesService {
       }
       throw error;
     }
+  }
+}
+
+/** EEXIST from a create or rename is a name clash the user can fix: a 409. */
+async function refuseExisting(run: Promise<void>): Promise<void> {
+  try {
+    await run;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    throw new ConflictException({
+      code: 'FILE_EXISTS',
+      message: 'a file or folder with that name already exists',
+    });
   }
 }
 

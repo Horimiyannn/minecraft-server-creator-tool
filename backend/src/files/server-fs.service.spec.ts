@@ -112,6 +112,7 @@ describe('ServerFsService', () => {
     );
     await expect(readFile(src)).rejects.toThrow();
   });
+
   it('creates an empty file, refusing to clobber an existing one', async () => {
     const { svc, data } = await makeService();
     await svc.createFile(SERVER_ID, 'config/new.toml');
@@ -124,5 +125,18 @@ describe('ServerFsService', () => {
     expect(await readFile(path.join(data, 'config/new.toml'), 'utf8')).toBe(
       'keep',
     );
+  });
+
+  it('refuses to rename onto an existing path', async () => {
+    const { svc, data } = await makeService();
+    await writeFile(path.join(data, 'a.txt'), 'a');
+    await writeFile(path.join(data, 'b.txt'), 'b');
+
+    await expect(svc.rename(SERVER_ID, 'a.txt', 'b.txt')).rejects.toMatchObject(
+      { code: 'EEXIST' },
+    );
+
+    expect(await readFile(path.join(data, 'a.txt'), 'utf8')).toBe('a');
+    expect(await readFile(path.join(data, 'b.txt'), 'utf8')).toBe('b');
   });
 });

@@ -20,6 +20,8 @@ export function FileTable({
   selected,
   onToggle,
   onOpen,
+  onRename,
+  onDelete,
   serverId,
   basePath = '',
 }: {
@@ -27,6 +29,8 @@ export function FileTable({
   selected: Set<string>;
   onToggle: (name: string) => void;
   onOpen: (entry: FileEntry) => void;
+  onRename: (entry: FileEntry) => void;
+  onDelete: (entry: FileEntry) => void;
   serverId: string;
   basePath?: string;
 }) {
@@ -38,7 +42,7 @@ export function FileTable({
           <th>Name</th>
           <th className="w-28">Size</th>
           <th className="w-44">Modified</th>
-          <th className="w-20" />
+          <th className="w-52" />
         </tr>
       </thead>
       <tbody>
@@ -63,15 +67,33 @@ export function FileTable({
             <td>{entry.type === 'dir' ? '—' : humanSize(entry.sizeBytes)}</td>
             <td>{new Date(entry.mtimeMs).toLocaleString()}</td>
             <td>
-              <a
-                className="text-neutral-400 hover:text-white"
-                href={downloadUrl(
-                  serverId,
-                  basePath ? `${basePath}/${entry.name}` : entry.name,
-                )}
-              >
-                Download
-              </a>
+              <div className="flex items-center gap-3 text-neutral-400">
+                <a
+                  className="hover:text-white"
+                  href={downloadUrl(
+                    serverId,
+                    basePath ? `${basePath}/${entry.name}` : entry.name,
+                  )}
+                >
+                  Download
+                </a>
+                <button
+                  type="button"
+                  className="hover:text-white"
+                  aria-label={`Rename ${entry.name}`}
+                  onClick={() => onRename(entry)}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  className="hover:text-red-400"
+                  aria-label={`Delete ${entry.name}`}
+                  onClick={() => onDelete(entry)}
+                >
+                  Delete
+                </button>
+              </div>
             </td>
           </tr>
         ))}

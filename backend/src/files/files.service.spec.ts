@@ -224,6 +224,7 @@ describe('FilesService', () => {
     expect(archiveService.createZip).not.toHaveBeenCalled();
     file.getStream().resume();
   });
+
   it('creates a new empty file', async () => {
     const { filesService, fs } = makeService();
     fs.createFile.mockResolvedValue(undefined);
@@ -240,6 +241,16 @@ describe('FilesService', () => {
     );
     await expect(
       filesService.createFile('s1', 'eula.txt'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('409s renaming onto a name that is already taken', async () => {
+    const { filesService, fs } = makeService();
+    fs.rename.mockRejectedValue(
+      Object.assign(new Error('exists'), { code: 'EEXIST' }),
+    );
+    await expect(
+      filesService.rename('s1', 'a.txt', 'b.txt'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });

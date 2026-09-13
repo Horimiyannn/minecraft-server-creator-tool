@@ -7,6 +7,7 @@ import {
 import {
   access,
   copyFile,
+  lstat,
   mkdir,
   readdir,
   readFile,
@@ -150,9 +151,20 @@ export class ServerFsService {
     await writeFile(target, '', { flag: 'wx' });
   }
 
+  /** Fails with EEXIST rather than landing on (and overwriting) a taken path. */
   async rename(serverId: string, from: string, to: string): Promise<void> {
     const src = await this.resolve(serverId, from);
     const dest = await this.resolve(serverId, to);
+    if (src === dest) return;
+    const taken = await lstat(dest).then(
+      () => true,
+      () => false,
+    );
+    if (taken) {
+      throw Object.assign(new Error(`path already exists: ${to}`), {
+        code: 'EEXIST',
+      });
+    }
     await mkdir(path.dirname(dest), { recursive: true });
     await rename(src, dest);
   }

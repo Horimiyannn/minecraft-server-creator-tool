@@ -20,6 +20,8 @@ describe('FileTable', () => {
         selected={new Set()}
         onToggle={jest.fn()}
         onOpen={jest.fn()}
+        onRename={jest.fn()}
+        onDelete={jest.fn()}
         serverId="s1"
       />,
     );
@@ -36,10 +38,36 @@ describe('FileTable', () => {
         selected={new Set()}
         onToggle={jest.fn()}
         onOpen={onOpen}
+        onRename={jest.fn()}
+        onDelete={jest.fn()}
         serverId="s1"
       />,
     );
     await userEvent.click(screen.getByText('mods'));
     expect(onOpen).toHaveBeenCalledWith(entries[0]);
+  });
+
+  it('offers per-row rename and delete', async () => {
+    const onRename = jest.fn();
+    const onDelete = jest.fn();
+    render(
+      <FileTable
+        entries={entries}
+        selected={new Set()}
+        onToggle={jest.fn()}
+        onOpen={jest.fn()}
+        onRename={onRename}
+        onDelete={onDelete}
+        serverId="s1"
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Rename server.properties' }),
+    );
+    expect(onRename).toHaveBeenCalledWith(entries[1]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete mods' }));
+    expect(onDelete).toHaveBeenCalledWith(entries[0]);
   });
 });
