@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class WriteFileDto {
   @IsString()
@@ -8,8 +8,11 @@ export class WriteFileDto {
   @IsString()
   content!: string;
 
-  /** mtime the editor loaded; omit to force-overwrite. */
+  /**
+   * mtime the editor loaded; omit to force-overwrite. fs.stat reports it with
+   * sub-millisecond precision, so it is a float — never require an integer.
+   */
   @IsOptional()
-  @IsInt()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   mtimeMs?: number;
 }

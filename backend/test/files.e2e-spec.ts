@@ -78,6 +78,23 @@ describe('Files routes (e2e)', () => {
     );
   });
 
+  it('accepts a fractional mtimeMs, as fs.stat reports it', async () => {
+    await request(app.getHttpServer())
+      .put('/servers/s1/files/content')
+      .send({
+        path: 'eula.txt',
+        content: 'eula=true',
+        mtimeMs: 1726212345678.5,
+      })
+      .expect(200);
+    expect(filesService.writeText).toHaveBeenCalledWith(
+      's1',
+      'eula.txt',
+      'eula=true',
+      1726212345678.5,
+    );
+  });
+
   it('reports bulk delete outcomes', async () => {
     const res = await request(app.getHttpServer())
       .post('/servers/s1/files/delete')
