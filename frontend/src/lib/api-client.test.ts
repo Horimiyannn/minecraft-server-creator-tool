@@ -38,6 +38,53 @@ describe('api', () => {
     });
   });
 
+  it('lifts the backend error code onto ApiError', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      fakeResponse(
+        409,
+        JSON.stringify({
+          code: 'PORT_IN_USE',
+          message: 'Port 25565 is already in use on this host',
+          statusCode: 409,
+        }),
+      ),
+    ) as jest.Mock;
+    await expect(api('/servers')).rejects.toMatchObject({
+      status: 409,
+      code: 'PORT_IN_USE',
+      message: 'Port 25565 is already in use on this host',
+    });
+  });
+
+  it('flattens a class-validator message array', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      fakeResponse(
+        400,
+        JSON.stringify({
+          statusCode: 400,
+          message: ['name must be 1-32 chars', 'port must be an integer'],
+        }),
+      ),
+    ) as jest.Mock;
+    await expect(api('/servers')).rejects.toMatchObject({
+      status: 400,
+      code: undefined,
+      message: 'name must be 1-32 chars, port must be an integer',
+    });
+  });
+
+  it('falls back to the raw body when it is not JSON', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        fakeResponse(502, '<html>bad gateway</html>'),
+      ) as jest.Mock;
+    await expect(api('/servers')).rejects.toMatchObject({
+      status: 502,
+      message: '<html>bad gateway</html>',
+    });
+  });
+
   it('returns undefined for 204 no-content', async () => {
     global.fetch = jest.fn().mockResolvedValue(fakeResponse(204)) as jest.Mock;
     await expect(

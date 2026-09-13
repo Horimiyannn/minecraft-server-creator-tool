@@ -5,6 +5,7 @@ const server = {
   name: 'survival',
   loader: 'vanilla',
   version: '1.20.1',
+  loaderVersion: null,
   ramMb: 2048,
   port: 25565,
   containerId: 'c1',
@@ -30,5 +31,12 @@ export async function mockBackend(page: Page) {
   );
   await page.route('**/versions/**', (r) =>
     r.fulfill({ json: { loader: 'vanilla', versions: ['1.20.1', '1.20.2'] } }),
+  );
+  // Registered last so it wins: Playwright matches routes newest-first, and
+  // the glob above would otherwise swallow the builds path.
+  await page.route('**/versions/*/builds/*', (r) =>
+    r.fulfill({
+      json: { loader: 'forge', mcVersion: '1.20.1', builds: ['47.2.0'] },
+    }),
   );
 }

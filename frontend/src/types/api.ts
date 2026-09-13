@@ -8,6 +8,7 @@ export interface PublicServer {
   name: string;
   loader: Loader;
   version: string;
+  loaderVersion: string | null;
   ramMb: number;
   port: number;
   containerId: string | null;

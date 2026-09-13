@@ -1,4 +1,12 @@
-import { IsIn, IsInt, IsString, Matches, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 import { LOADERS, Loader } from '../provisioning';
 
 export class CreateServerDto {
@@ -16,6 +24,14 @@ export class CreateServerDto {
     message: 'version has an invalid format',
   })
   version!: string;
+
+  /** Exact loader build; omit to let itzg resolve the latest for the version. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9][0-9A-Za-z._-]{0,39}$/, {
+    message: 'loaderVersion has an invalid format',
+  })
+  loaderVersion?: string;
 
   @IsInt()
   @Min(512)

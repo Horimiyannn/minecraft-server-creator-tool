@@ -8,6 +8,8 @@ export interface CreateContainerOptions {
   id: string;
   port: number;
   env: string[];
+  /** Hard container memory cap in MB (the server's whole RAM budget). */
+  memoryMb: number;
 }
 
 export interface ContainerStatus {
@@ -35,6 +37,7 @@ export interface RawStats {
   };
 }
 
+const MB = 1024 * 1024;
 const CONTAINER_MC_PORT = '25565/tcp';
 const CONTAINER_RCON_PORT = '25575/tcp';
 
@@ -53,6 +56,7 @@ export class DockerService {
   async create(opts: CreateContainerOptions): Promise<string> {
     const dataDir = path.join(this.dataRoot, opts.id, 'data');
     await mkdir(dataDir, { recursive: true });
+    await this.ensureImage();
 
     const container = await this.docker.createContainer({
       Image: this.image,
@@ -62,6 +66,12 @@ export class DockerService {
       ExposedPorts: { [CONTAINER_MC_PORT]: {}, [CONTAINER_RCON_PORT]: {} },
       HostConfig: {
         Binds: [`${dataDir}:/data`],
+        // Cap the container, not just the JVM: without this, memory_stats.limit
+        // reports total host RAM, so the UI showed "x / 16G" for a 2G server —
+        // and nothing actually stopped it from using all 16G. MemorySwap is
+        // pinned to the same value so swap can't inflate the reading either.
+        Memory: opts.memoryMb * MB,
+        MemorySwap: opts.memoryMb * MB,
         PortBindings: {
           [CONTAINER_MC_PORT]: [{ HostPort: String(opts.port) }],
           // RCON: loopback only, OS-assigned host port (read back via inspect).
@@ -71,6 +81,22 @@ export class DockerService {
       },
     });
     return container.id;
+  }
+
+  /** Pull the server image if it isn't present locally (first create only). */
+  private async ensureImage(): Promise<void> {
+    try {
+      await this.docker.getImage(this.image).inspect();
+      return;
+    } catch (error) {
+      if (!isStatus(error, 404)) throw error;
+    }
+    const stream = await this.docker.pull(this.image);
+    await new Promise<void>((resolve, reject) => {
+      this.docker.modem.followProgress(stream, (err) =>
+        err ? reject(err) : resolve(),
+      );
+    });
   }
 
   async start(containerId: string): Promise<void> {

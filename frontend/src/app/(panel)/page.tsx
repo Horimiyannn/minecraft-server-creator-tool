@@ -1,20 +1,18 @@
 'use client';
-import Link from 'next/link';
-import { ROUTES } from '@/constants';
+import { useState } from 'react';
 import { Button, Spinner } from '@ui';
-import { useServers, ServerCard } from '@/modules/servers';
+import { useServers, ServerCard, CreateServerModal } from '@/modules/servers';
 import { LiveCpuRam } from '@/modules/metrics';
 
 export default function Dashboard() {
   const { data: servers, isLoading, isError } = useServers();
+  const [creating, setCreating] = useState(false);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Servers</h1>
-        <Link href={ROUTES.newServer}>
-          <Button>New server</Button>
-        </Link>
+        <Button onClick={() => setCreating(true)}>New server</Button>
       </div>
       {isLoading && <Spinner />}
       {isError && <p className="text-red-400">Failed to load servers.</p>}
@@ -32,6 +30,7 @@ export default function Dashboard() {
       {servers?.length === 0 && (
         <p className="text-neutral-400">No servers yet. Create one.</p>
       )}
+      <CreateServerModal open={creating} onClose={() => setCreating(false)} />
     </div>
   );
 }

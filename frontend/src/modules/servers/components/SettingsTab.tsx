@@ -14,6 +14,13 @@ export function SettingsTab({ server }: { server: PublicServer }) {
   const rows: [string, string | number][] = [
     ['Loader', server.loader],
     ['Version', server.version],
+    // Only meaningful when a build was pinned at creation.
+    ...(server.loaderVersion
+      ? ([[`${server.loader} build`, server.loaderVersion]] as [
+          string,
+          string,
+        ][])
+      : []),
     ['RAM (MB)', server.ramMb],
     ['Port', server.port],
     ['Status', server.status],

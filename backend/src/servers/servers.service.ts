@@ -3,11 +3,13 @@ import { randomBytes } from 'node:crypto';
 import { ServerRepository, ServerRecord } from './server.repository';
 import { DockerService, ContainerStatus } from './docker.service';
 import { toItzgEnv, Loader } from './provisioning';
+import { translateCreateError } from './server-errors';
 
 export interface CreateServerInput {
   name: string;
   loader: Loader;
   version: string;
+  loaderVersion?: string;
   ramMb: number;
   port: number;
 }
@@ -41,6 +43,7 @@ export class ServersService {
       const env = toItzgEnv({
         loader: input.loader,
         version: input.version,
+        loaderVersion: input.loaderVersion,
         ramMb: input.ramMb,
         rconPassword,
       });
@@ -48,6 +51,7 @@ export class ServersService {
         id: server.id,
         port: input.port,
         env,
+        memoryMb: input.ramMb,
       });
       await this.dockerService.start(containerId);
       return toPublic(
@@ -59,7 +63,12 @@ export class ServersService {
       );
     } catch (error) {
       await this.rollback(server.id, containerId);
-      throw error;
+      // Rollback drops the row, so the name and port are free again and the
+      // user can retry straight away with a corrected value.
+      throw translateCreateError(error, {
+        name: input.name,
+        port: input.port,
+      });
     }
   }
 
@@ -67,7 +76,7 @@ export class ServersService {
     if (containerId) {
       await this.dockerService.remove(containerId).catch(() => undefined);
     }
-    await this.serverRepository.setStatus(id, 'failed').catch(() => undefined);
+    await this.serverRepository.delete(id).catch(() => undefined);
   }
 
   async listServers(): Promise<PublicServer[]> {

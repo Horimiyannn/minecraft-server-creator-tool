@@ -1,7 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { ServersService } from './servers.service';
 import { ServerRepository, ServerRecord } from './server.repository';
 import { DockerService } from './docker.service';
+import { ServerError } from './server-errors';
 
 function record(over: Partial<ServerRecord> = {}): ServerRecord {
   return {
@@ -9,6 +10,7 @@ function record(over: Partial<ServerRecord> = {}): ServerRecord {
     name: 'survival',
     loader: 'vanilla',
     version: '1.20.1',
+    loaderVersion: null,
     ramMb: 2048,
     port: 25565,
     rconPassword: 'pw',
@@ -77,7 +79,42 @@ describe('ServersService.createServer', () => {
     expect(result).not.toHaveProperty('rconPassword');
   });
 
-  it('rolls back to failed and rethrows when container start fails', async () => {
+  it('passes the RAM budget to docker as a hard container cap', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.create.mockResolvedValue(record());
+    docker.create.mockResolvedValue('c123');
+    const svc = new ServersService(repo, docker);
+
+    await svc.createServer(input);
+    expect(docker.create).toHaveBeenCalledWith(
+      expect.objectContaining({ memoryMb: 2048 }),
+    );
+    // Heap stays under the cap so the kernel doesn't OOM-kill the container.
+    expect(docker.create.mock.calls[0][0].env).toContain('MEMORY=1536M');
+  });
+
+  it('pins the loader build when one was chosen', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.create.mockResolvedValue(record({ loader: 'forge' }));
+    docker.create.mockResolvedValue('c123');
+    const svc = new ServersService(repo, docker);
+
+    await svc.createServer({
+      ...input,
+      loader: 'forge',
+      loaderVersion: '47.2.0',
+    });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ loaderVersion: '47.2.0' }),
+    );
+    expect(docker.create.mock.calls[0][0].env).toContain(
+      'FORGE_VERSION=47.2.0',
+    );
+  });
+
+  it('deletes the row and removes the container when start fails', async () => {
     const repo = makeRepo();
     const docker = makeDocker();
     repo.create.mockResolvedValue(record());
@@ -88,9 +125,37 @@ describe('ServersService.createServer', () => {
     repo.findById.mockResolvedValue(record({ containerId: null }));
     const svc = new ServersService(repo, docker);
 
-    await expect(svc.createServer(input)).rejects.toThrow('daemon down');
+    await expect(svc.createServer(input)).rejects.toThrow(HttpException);
     expect(docker.remove).toHaveBeenCalledWith('c123');
-    expect(repo.setStatus).toHaveBeenCalledWith('srv1', 'failed');
+    // Deleting (not just flagging) frees the unique name+port for a retry.
+    expect(repo.delete).toHaveBeenCalledWith('srv1');
+  });
+
+  it('translates a docker port clash into a coded PORT_IN_USE error', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.create.mockResolvedValue(record());
+    docker.create.mockRejectedValue(
+      new Error('Bind for 0.0.0.0:25565 failed: port is already allocated'),
+    );
+    const svc = new ServersService(repo, docker);
+
+    await expect(svc.createServer(input)).rejects.toMatchObject({
+      response: { code: 'PORT_IN_USE' },
+    });
+  });
+
+  it('lets a repository conflict keep its own code', async () => {
+    const repo = makeRepo();
+    const docker = makeDocker();
+    repo.create.mockRejectedValue(
+      new ServerError('NAME_TAKEN', 'taken', HttpStatus.CONFLICT),
+    );
+    const svc = new ServersService(repo, docker);
+
+    await expect(svc.createServer(input)).rejects.toMatchObject({
+      response: { code: 'NAME_TAKEN' },
+    });
   });
 });
 

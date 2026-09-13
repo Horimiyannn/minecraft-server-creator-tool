@@ -8,6 +8,7 @@ const server: PublicServer = {
   name: 'survival',
   loader: 'paper',
   version: '1.20.1',
+  loaderVersion: null,
   ramMb: 2048,
   port: 25565,
   containerId: 'c1',

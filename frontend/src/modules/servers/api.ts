@@ -5,6 +5,8 @@ export interface CreateServerBody {
   name: string;
   loader: Loader;
   version: string;
+  /** Omitted to let the backend resolve the latest loader build. */
+  loaderVersion?: string;
   ramMb: number;
   port: number;
 }

@@ -19,6 +19,36 @@ function makeService(container: Record<string, jest.Mock>): {
   return { service, getContainer };
 }
 
+// create() pre-pulls the image, so a fake for it needs getImage/pull too.
+function makeCreateService(overrides: Record<string, unknown> = {}): {
+  service: DockerService;
+  createContainer: jest.Mock;
+  pull: jest.Mock;
+  inspectImage: jest.Mock;
+} {
+  const createContainer = jest.fn().mockResolvedValue({ id: 'cNEW' });
+  const inspectImage = jest.fn().mockResolvedValue({ Id: 'sha256:abc' });
+  const pull = jest.fn().mockResolvedValue('PULL_STREAM');
+  const configService = { get: jest.fn().mockReturnValue(undefined) };
+  const service = new DockerService(configService as never);
+  (service as unknown as { docker: unknown }).docker = {
+    createContainer,
+    getContainer: jest.fn(),
+    getImage: jest.fn().mockReturnValue({ inspect: inspectImage }),
+    pull,
+    modem: {
+      followProgress: (_stream: unknown, done: (err: unknown) => void) =>
+        done(null),
+    },
+    ...overrides,
+  };
+  return { service, createContainer, pull, inspectImage };
+}
+
+function notFound(): Error & { statusCode: number } {
+  return Object.assign(new Error('no such image'), { statusCode: 404 });
+}
+
 describe('DockerService.logs', () => {
   it('requests a following, combined stdout+stderr stream', async () => {
     const logs = jest.fn().mockResolvedValue('STREAM');
@@ -83,18 +113,12 @@ describe('DockerService.rconEndpoint', () => {
 
 describe('DockerService.create', () => {
   it('publishes RCON on loopback, sets a TTY, and keeps the MC port', async () => {
-    const createContainer = jest.fn().mockResolvedValue({ id: 'cNEW' });
-    const getContainer = jest.fn();
-    const configService = { get: jest.fn().mockReturnValue(undefined) };
-    const service = new DockerService(configService as never);
-    (service as unknown as { docker: unknown }).docker = {
-      createContainer,
-      getContainer,
-    };
+    const { service, createContainer } = makeCreateService();
     const id = await service.create({
       id: 'srv1',
       port: 25599,
       env: ['EULA=TRUE'],
+      memoryMb: 2048,
     });
     expect(id).toBe('cNEW');
     const arg = createContainer.mock.calls[0][0];
@@ -109,5 +133,47 @@ describe('DockerService.create', () => {
     expect(arg.HostConfig.PortBindings['25575/tcp']).toEqual([
       { HostIp: '127.0.0.1', HostPort: '' },
     ]);
+  });
+
+  it('caps container memory so stats report the budget, not host RAM', async () => {
+    const { service, createContainer } = makeCreateService();
+    await service.create({
+      id: 'srv1',
+      port: 25599,
+      env: [],
+      memoryMb: 2048,
+    });
+    const { HostConfig } = createContainer.mock.calls[0][0];
+    expect(HostConfig.Memory).toBe(2048 * 1024 * 1024);
+    // Equal to Memory: swap must not let the container exceed its budget.
+    expect(HostConfig.MemorySwap).toBe(HostConfig.Memory);
+  });
+
+  it('skips the pull when the image is already local', async () => {
+    const { service, pull } = makeCreateService();
+    await service.create({ id: 'srv1', port: 25599, env: [], memoryMb: 512 });
+    expect(pull).not.toHaveBeenCalled();
+  });
+
+  it('pulls the image when it is missing locally', async () => {
+    const { service, pull } = makeCreateService({
+      getImage: jest
+        .fn()
+        .mockReturnValue({ inspect: jest.fn().mockRejectedValue(notFound()) }),
+    });
+    await service.create({ id: 'srv1', port: 25599, env: [], memoryMb: 512 });
+    expect(pull).toHaveBeenCalledWith('itzg/minecraft-server');
+  });
+
+  it('propagates a non-404 image inspect failure instead of pulling', async () => {
+    const { service, pull } = makeCreateService({
+      getImage: jest.fn().mockReturnValue({
+        inspect: jest.fn().mockRejectedValue(new Error('daemon exploded')),
+      }),
+    });
+    await expect(
+      service.create({ id: 'srv1', port: 25599, env: [], memoryMb: 512 }),
+    ).rejects.toThrow('daemon exploded');
+    expect(pull).not.toHaveBeenCalled();
   });
 });

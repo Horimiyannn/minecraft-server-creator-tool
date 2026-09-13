@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ServerRepository } from './server.repository';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,10 +15,14 @@ function makePrismaMock(): jest.Mocked<PrismaService> {
   } as unknown as jest.Mocked<PrismaService>;
 }
 
-function knownRequestError(code: string): Prisma.PrismaClientKnownRequestError {
+function knownRequestError(
+  code: string,
+  meta?: Record<string, unknown>,
+): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('mock prisma error', {
     code,
     clientVersion: 'test',
+    meta,
   });
 }
 
@@ -32,13 +36,34 @@ describe('ServerRepository', () => {
     rconPassword: 'secret',
   };
 
-  it('translates a P2002 unique violation on create to ConflictException', async () => {
+  // SQLite reports the clashing column in meta.target (verified live against
+  // Prisma 6.19), which is what lets the client tell the two cases apart.
+  it.each([
+    [['name'], 'NAME_TAKEN'],
+    [['port'], 'PORT_TAKEN'],
+  ])('maps a P2002 on %p to a coded 409', async (target, code) => {
+    const prisma = makePrismaMock();
+    (prisma.server.create as jest.Mock).mockRejectedValue(
+      knownRequestError('P2002', { target }),
+    );
+    const repo = new ServerRepository(prisma);
+    await expect(repo.create(data)).rejects.toMatchObject({
+      status: 409,
+      response: { code },
+    });
+  });
+
+  it('still returns a 409 when P2002 carries no usable target', async () => {
     const prisma = makePrismaMock();
     (prisma.server.create as jest.Mock).mockRejectedValue(
       knownRequestError('P2002'),
     );
     const repo = new ServerRepository(prisma);
-    await expect(repo.create(data)).rejects.toThrow(ConflictException);
+    // No column to blame, so the generic message has to carry the detail.
+    await expect(repo.create(data)).rejects.toMatchObject({
+      status: 409,
+      response: { message: expect.stringContaining('name or port') },
+    });
   });
 
   it('rethrows non-Prisma errors from create unchanged', async () => {

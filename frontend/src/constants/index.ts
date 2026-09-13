@@ -4,7 +4,6 @@ export const API_URL =
 export const ROUTES = {
   login: '/login',
   dashboard: '/',
-  newServer: '/servers/new',
   server: (id: string) => `/servers/${id}`,
 } as const;
 
@@ -13,6 +12,8 @@ export const QUERY_KEYS = {
   servers: ['servers'] as const,
   server: (id: string) => ['servers', id] as const,
   versions: (loader: string) => ['versions', loader] as const,
+  builds: (loader: string, mcVersion: string) =>
+    ['versions', loader, 'builds', mcVersion] as const,
 };
 
 export const SOCKET_EVENTS = {
