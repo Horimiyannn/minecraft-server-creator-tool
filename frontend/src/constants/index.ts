@@ -14,6 +14,9 @@ export const QUERY_KEYS = {
   versions: (loader: string) => ['versions', loader] as const,
   builds: (loader: string, mcVersion: string) =>
     ['versions', loader, 'builds', mcVersion] as const,
+  files: (id: string, path: string) => ['servers', id, 'files', path] as const,
+  fileContent: (id: string, path: string) =>
+    ['servers', id, 'file', path] as const,
 };
 
 export const SOCKET_EVENTS = {

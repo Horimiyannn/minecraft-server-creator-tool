@@ -40,3 +40,21 @@ export interface ConsoleOutput {
   serverId: string;
   output: string;
 }
+
+export interface FileEntry {
+  name: string;
+  type: 'file' | 'dir';
+  sizeBytes: number;
+  mtimeMs: number;
+}
+
+export interface FileContent {
+  content: string;
+  mtimeMs: number;
+}
+
+export interface BulkResult {
+  path: string;
+  ok: boolean;
+  error?: string;
+}
