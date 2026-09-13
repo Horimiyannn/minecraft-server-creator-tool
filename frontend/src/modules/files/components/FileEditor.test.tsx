@@ -70,9 +70,32 @@ describe('FileEditor', () => {
       }) as unknown as typeof fetch;
 
     renderEditor();
-    await screen.findByRole('textbox');
+    const box = await screen.findByRole('textbox');
+    await userEvent.type(box, 'b');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText(/changed on disk/i)).toBeInTheDocument();
+  });
+
+  it('keeps Save disabled until the content actually differs', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ content: 'eula=false', mtimeMs: 111 }),
+    }) as unknown as typeof fetch;
+
+    renderEditor();
+    const box = await screen.findByRole('textbox');
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+
+    await userEvent.clear(box);
+    await userEvent.type(box, 'eula=true');
+    expect(save).toBeEnabled();
+
+    // Typing back to the loaded text is not a change worth saving.
+    await userEvent.clear(box);
+    await userEvent.type(box, 'eula=false');
+    expect(save).toBeDisabled();
   });
 });

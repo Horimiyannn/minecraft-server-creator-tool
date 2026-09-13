@@ -50,6 +50,7 @@ export function FileEditor({
             Close
           </Button>
           <Button
+            disabled={!dirty}
             loading={save.isPending}
             onClick={() =>
               save.mutate({ path, content, mtimeMs: data.mtimeMs })
