@@ -29,9 +29,13 @@ export function ConsoleTab({ serverId }: { serverId: string }) {
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      term.dispose();
       termRef.current = null;
       writtenRef.current = 0;
+      // xterm 5.5's open() queues setTimeout(() => viewport.syncScrollArea())
+      // without a disposed check; disposing before it fires throws "reading
+      // 'dimensions'" (every mount under StrictMode, or a fast tab switch).
+      // Timers of equal delay run in order, so this dispose lands after it.
+      setTimeout(() => term.dispose());
     };
   }, []);
 
