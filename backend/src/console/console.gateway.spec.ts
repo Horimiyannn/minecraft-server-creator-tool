@@ -7,9 +7,9 @@ function makeGateway() {
   const socketAuthService = {
     authenticate: jest.fn().mockReturnValue({ sub: 1, username: 'admin' }),
   } as unknown as jest.Mocked<SocketAuthService>;
+  const release = jest.fn();
   const logStreamService = {
-    subscribe: jest.fn().mockResolvedValue(undefined),
-    unsubscribe: jest.fn(),
+    subscribe: jest.fn().mockResolvedValue(release),
   } as unknown as jest.Mocked<LogStreamService>;
   const rconService = {
     send: jest.fn().mockResolvedValue('cmd-output'),
@@ -28,6 +28,7 @@ function makeGateway() {
   return {
     gateway,
     logStreamService,
+    release,
     rconService,
     emit,
     rooms,
@@ -100,11 +101,15 @@ describe('ConsoleGateway', () => {
     expect(client.emit).toHaveBeenCalledWith('error', { message: 'offline' });
   });
 
-  it('unsubscribes when the last viewer leaves', async () => {
-    const { gateway, logStreamService, rooms } = makeGateway();
+  it('releases the log listener when the last viewer leaves', async () => {
+    const { gateway, release, rooms } = makeGateway();
     const client = fakeClient();
+    rooms.set('server:srv1', new Set(['sock1']));
+    await gateway.join(client as never, { serverId: 'srv1' });
+
     rooms.set('server:srv1', new Set());
     await gateway.leave(client as never, { serverId: 'srv1' });
-    expect(logStreamService.unsubscribe).toHaveBeenCalledWith('srv1');
+
+    expect(release).toHaveBeenCalled();
   });
 });

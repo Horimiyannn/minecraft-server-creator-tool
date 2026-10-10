@@ -17,6 +17,8 @@ const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
 })
 export class ConsoleGateway implements OnGatewayConnection {
   @WebSocketServer() private readonly server!: Namespace;
+  /** Release handles for this gateway's log-stream listener, per server. */
+  private readonly releases = new Map<string, () => void>();
 
   constructor(
     private readonly socketAuthService: SocketAuthService,
@@ -44,10 +46,17 @@ export class ConsoleGateway implements OnGatewayConnection {
   async join(client: Socket, payload: { serverId: string }): Promise<void> {
     const room = `server:${payload.serverId}`;
     await client.join(room);
-    // subscribe is idempotent per server, so repeat/concurrent joins are safe.
-    await this.logStreamService.subscribe(payload.serverId, (line) =>
-      this.server.to(room).emit('log', { serverId: payload.serverId, line }),
-    );
+    // One listener per room: repeat/concurrent joins reuse the existing one.
+    if (!this.releases.has(payload.serverId)) {
+      const release = await this.logStreamService.subscribe(
+        payload.serverId,
+        (line) =>
+          this.server
+            .to(room)
+            .emit('log', { serverId: payload.serverId, line }),
+      );
+      this.releases.set(payload.serverId, release);
+    }
   }
 
   @SubscribeMessage('leave')
@@ -75,16 +84,17 @@ export class ConsoleGateway implements OnGatewayConnection {
   }
 
   private dropIfEmpty(serverId: string): void {
-    if (this.roomSize(`server:${serverId}`) === 0) {
-      this.logStreamService.unsubscribe(serverId);
-    }
+    if (this.roomSize(`server:${serverId}`) === 0) this.release(serverId);
   }
 
   // Called from 'disconnecting', where the leaving socket is still counted.
   private dropIfLast(room: string): void {
-    if (this.roomSize(room) <= 1) {
-      this.logStreamService.unsubscribe(room.slice('server:'.length));
-    }
+    if (this.roomSize(room) <= 1) this.release(room.slice('server:'.length));
+  }
+
+  private release(serverId: string): void {
+    this.releases.get(serverId)?.();
+    this.releases.delete(serverId);
   }
 
   private roomSize(room: string): number {

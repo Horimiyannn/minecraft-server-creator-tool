@@ -3,7 +3,8 @@ import { LogStreamService } from './log-stream.service';
 import { DockerService } from '../servers/docker.service';
 import { ServersService } from '../servers/servers.service';
 
-function make(stream: Readable) {
+function makeService(stream: Readable = newStream()) {
+  const destroy = jest.spyOn(stream, 'destroy');
   const dockerService = {
     logs: jest.fn().mockResolvedValue(stream),
   } as unknown as jest.Mocked<DockerService>;
@@ -11,8 +12,11 @@ function make(stream: Readable) {
     resolveContainerId: jest.fn().mockResolvedValue('c1'),
   } as unknown as jest.Mocked<ServersService>;
   return {
-    service: new LogStreamService(dockerService, serversService),
+    logStreamService: new LogStreamService(dockerService, serversService),
     dockerService,
+    stream,
+    emit: (chunk: string) => stream.emit('data', Buffer.from(chunk, 'utf8')),
+    destroyed: () => destroy.mock.calls.length > 0,
   };
 }
 
@@ -25,44 +29,81 @@ const flush = () => new Promise((r) => setImmediate(r));
 
 describe('LogStreamService', () => {
   it('splits chunks into whole lines and strips a trailing CR', async () => {
-    const stream = newStream();
-    const { service } = make(stream);
+    const { logStreamService, stream } = makeService();
     const lines: string[] = [];
-    await service.subscribe('srv1', (l) => lines.push(l));
+    const release = await logStreamService.subscribe('srv1', (l) =>
+      lines.push(l),
+    );
     stream.push('one\r\ntwo\nthr'); // "thr" is a partial line, held back
     await flush();
     expect(lines).toEqual(['one', 'two']);
     stream.push('ee\n');
     await flush();
     expect(lines).toEqual(['one', 'two', 'three']);
-    service.unsubscribe('srv1');
+    release();
   });
 
   it('flushes a trailing partial line when the stream ends', async () => {
-    const stream = newStream();
-    const { service } = make(stream);
+    const { logStreamService, stream } = makeService();
     const lines: string[] = [];
-    await service.subscribe('srv1', (l) => lines.push(l));
+    await logStreamService.subscribe('srv1', (l) => lines.push(l));
     stream.push('no newline here');
     stream.push(null); // end
     await flush();
     expect(lines).toEqual(['no newline here']);
   });
 
-  it('is idempotent — a second subscribe does not open a second stream', async () => {
-    const { service, dockerService } = make(newStream());
-    await service.subscribe('srv1', () => undefined);
-    await service.subscribe('srv1', () => undefined);
+  it('opens only one docker stream per server', async () => {
+    const { logStreamService, dockerService } = makeService();
+    const releaseA = await logStreamService.subscribe('srv1', () => undefined);
+    const releaseB = await logStreamService.subscribe('srv1', () => undefined);
     expect(dockerService.logs).toHaveBeenCalledTimes(1);
-    service.unsubscribe('srv1');
+    releaseA();
+    releaseB();
   });
 
-  it('destroys the stream on unsubscribe', async () => {
-    const stream = newStream();
-    const destroy = jest.spyOn(stream, 'destroy');
-    const { service } = make(stream);
-    await service.subscribe('srv1', () => undefined);
-    service.unsubscribe('srv1');
-    expect(destroy).toHaveBeenCalled();
+  it('destroys the stream when the only listener releases', async () => {
+    const { logStreamService, destroyed } = makeService();
+    const release = await logStreamService.subscribe('srv1', () => undefined);
+    release();
+    expect(destroyed()).toBe(true);
+  });
+
+  it('fans one docker stream out to several listeners', async () => {
+    const { logStreamService, emit } = makeService();
+    const a: string[] = [];
+    const b: string[] = [];
+
+    await logStreamService.subscribe('s1', (line) => a.push(line));
+    await logStreamService.subscribe('s1', (line) => b.push(line));
+    emit('hello\n');
+
+    expect(a).toEqual(['hello']);
+    expect(b).toEqual(['hello']);
+  });
+
+  it('keeps the stream alive until the last listener releases', async () => {
+    const { logStreamService, destroyed, emit } = makeService();
+    const releaseA = await logStreamService.subscribe('s1', () => undefined);
+    const seen: string[] = [];
+    const releaseB = await logStreamService.subscribe('s1', (line) =>
+      seen.push(line),
+    );
+
+    releaseA();
+    emit('still here\n');
+    expect(seen).toEqual(['still here']);
+    expect(destroyed()).toBe(false);
+
+    releaseB();
+    expect(destroyed()).toBe(true);
+  });
+
+  it('releasing twice is a no-op', async () => {
+    const { logStreamService, destroyed } = makeService();
+    const release = await logStreamService.subscribe('s1', () => undefined);
+    release();
+    release();
+    expect(destroyed()).toBe(true);
   });
 });

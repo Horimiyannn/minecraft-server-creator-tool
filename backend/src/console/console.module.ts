@@ -8,5 +8,6 @@ import { LogStreamService } from './log-stream.service';
 @Module({
   imports: [AuthModule, ServersModule],
   providers: [ConsoleGateway, RconService, LogStreamService],
+  exports: [RconService, LogStreamService],
 })
 export class ConsoleModule {}
