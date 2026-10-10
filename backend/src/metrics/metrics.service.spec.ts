@@ -2,6 +2,7 @@ import { MetricsService } from './metrics.service';
 import { DockerService, RawStats } from '../servers/docker.service';
 import { ServersService } from '../servers/servers.service';
 import { ServerStats } from './metrics';
+import { BackupRepository } from '../backups/backup.repository';
 
 // Keep disk-size resolution a fast microtask (no real fs) so the polling
 // loop's ticks settle under fake timers.
@@ -22,7 +23,7 @@ function sample(total: number): RawStats {
   };
 }
 
-function make(stats: jest.Mock) {
+function make(stats: jest.Mock, backupBytes = 0n) {
   const dockerService = {
     stats,
     dataDir: jest.fn().mockReturnValue('/tmp/nope'),
@@ -30,11 +31,33 @@ function make(stats: jest.Mock) {
   const serversService = {
     resolveContainerId: jest.fn().mockResolvedValue('c1'),
   } as unknown as jest.Mocked<ServersService>;
-  return { service: new MetricsService(dockerService, serversService), stats };
+  const backupRepository = {
+    totalBytes: jest.fn().mockResolvedValue(backupBytes),
+  } as unknown as jest.Mocked<BackupRepository>;
+  return {
+    service: new MetricsService(
+      dockerService,
+      serversService,
+      backupRepository,
+    ),
+    stats,
+  };
 }
 
 describe('MetricsService.subscribe', () => {
   afterEach(() => jest.useRealTimers());
+
+  it('reports backup disk usage separately from the data dir', async () => {
+    jest.useFakeTimers();
+    const stats = jest.fn().mockResolvedValue(sample(100));
+    const { service } = make(stats, BigInt(5 * 1024 * 1024));
+    const emitted: ServerStats[] = [];
+    await service.subscribe('srv1', (s) => emitted.push(s));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(emitted[0].diskMb).toBe(0);
+    expect(emitted[0].backupsMb).toBe(5);
+    service.unsubscribe('srv1');
+  });
 
   it('emits an immediate sample and one per interval', async () => {
     jest.useFakeTimers();

@@ -9,6 +9,8 @@ export interface ServerStats {
   memUsedMb: number;
   memLimitMb: number;
   diskMb: number;
+  /** Backup archives for this server; a SQL sum, not a tree walk. */
+  backupsMb: number;
 }
 
 export function computeCpuPct(raw: RawStats): number {

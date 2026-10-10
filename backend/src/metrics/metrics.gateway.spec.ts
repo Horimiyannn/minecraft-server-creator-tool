@@ -53,7 +53,7 @@ describe('MetricsGateway', () => {
     );
     // Drive the emit callback the gateway handed the service.
     const sink = metricsService.subscribe.mock.calls[0][1];
-    sink({ cpuPct: 3, memUsedMb: 1, memLimitMb: 2, diskMb: 0 });
+    sink({ cpuPct: 3, memUsedMb: 1, memLimitMb: 2, diskMb: 0, backupsMb: 0 });
     expect(emit).toHaveBeenCalledWith(
       'stats',
       expect.objectContaining({ serverId: 'srv1', cpuPct: 3 }),

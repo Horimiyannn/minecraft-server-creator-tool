@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DockerService, RawStats } from '../servers/docker.service';
 import { ServersService } from '../servers/servers.service';
+import { BackupRepository } from '../backups/backup.repository';
 import {
   computeCpuPct,
   computeMem,
@@ -30,6 +31,7 @@ export class MetricsService {
   constructor(
     private readonly dockerService: DockerService,
     private readonly serversService: ServersService,
+    private readonly backupRepository: BackupRepository,
   ) {}
 
   async subscribe(
@@ -44,6 +46,7 @@ export class MetricsService {
       const dataDir = this.dockerService.dataDir(serverId);
       let prevCpu: RawStats['cpu_stats'] | undefined;
       let diskMb = 0;
+      let backupsMb = 0;
       let tick = 0;
 
       const run = async (): Promise<void> => {
@@ -55,6 +58,12 @@ export class MetricsService {
           prevCpu = cur.cpu_stats;
           if (tick % DISK_EVERY === 0) {
             diskMb = Math.round((await dirSizeBytes(dataDir)) / (1024 * 1024));
+            // Backups live outside the data dir, so they are a separate
+            // figure — and a SQL sum rather than another tree walk.
+            backupsMb = Math.round(
+              Number(await this.backupRepository.totalBytes(serverId)) /
+                (1024 * 1024),
+            );
           }
           tick += 1;
           const mem = computeMem(cur);
@@ -63,6 +72,7 @@ export class MetricsService {
             memUsedMb: mem.usedMb,
             memLimitMb: mem.limitMb,
             diskMb,
+            backupsMb,
           });
         } catch {
           // transient (container restarting) — skip this tick
