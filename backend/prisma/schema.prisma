@@ -26,4 +26,31 @@ model Server {
   containerId   String?
   status        String   @default("creating")
   createdAt     DateTime @default(now())
+  backups       Backup[]
+  schedule      BackupSchedule?
+}
+
+model Backup {
+  id        String   @id @default(cuid())
+  serverId  String
+  kind      String
+  trigger   String
+  label     String?
+  path      String
+  sizeBytes BigInt
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, kind, createdAt])
+}
+
+model BackupSchedule {
+  serverId      String  @id
+  worldEveryMin Int?
+  fullEveryMin  Int?
+  keepWorld     Int     @default(12)
+  keepFull      Int     @default(5)
+  skipWhenEmpty Boolean @default(true)
+  chatEnabled   Boolean @default(true)
+  server        Server  @relation(fields: [serverId], references: [id], onDelete: Cascade)
 }
