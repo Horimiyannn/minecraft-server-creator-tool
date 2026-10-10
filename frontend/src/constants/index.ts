@@ -17,6 +17,8 @@ export const QUERY_KEYS = {
   files: (id: string, path: string) => ['servers', id, 'files', path] as const,
   fileContent: (id: string, path: string) =>
     ['servers', id, 'file', path] as const,
+  backups: (id: string) => ['servers', id, 'backups'] as const,
+  backupSchedule: (id: string) => ['servers', id, 'backup-schedule'] as const,
 };
 
 export const SOCKET_EVENTS = {

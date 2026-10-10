@@ -58,3 +58,26 @@ export interface BulkResult {
   ok: boolean;
   error?: string;
 }
+
+export type BackupKind = 'world' | 'full';
+export type BackupTrigger = 'manual' | 'chat' | 'schedule';
+
+export interface Backup {
+  id: string;
+  serverId: string;
+  kind: BackupKind;
+  trigger: BackupTrigger;
+  label: string | null;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface BackupSchedule {
+  serverId: string;
+  worldEveryMin: number | null;
+  fullEveryMin: number | null;
+  keepWorld: number;
+  keepFull: number;
+  skipWhenEmpty: boolean;
+  chatEnabled: boolean;
+}
