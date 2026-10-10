@@ -1,6 +1,9 @@
 import { ChatTriggerService } from './chat-trigger.service';
 
-function makeHarness(ops = '[{"name":"Steve"}]') {
+function makeHarness(
+  ops = '[{"name":"Steve"}]',
+  servers: Array<{ id: string }> = [{ id: 's1' }],
+) {
   let sink: (line: string) => void = () => undefined;
   const ends: Array<() => void> = [];
   const rconSend = jest.fn().mockResolvedValue('ok');
@@ -28,6 +31,7 @@ function makeHarness(ops = '[{"name":"Steve"}]') {
       listSchedules: jest.fn().mockResolvedValue([]),
     } as never,
     { dataDir: () => '/srv/mc/s1/data' } as never,
+    { listServers: jest.fn(async () => servers) } as never,
   );
 
   // ops.json is read per command; stub the read the service uses.
@@ -38,6 +42,7 @@ function makeHarness(ops = '[{"name":"Steve"}]') {
 
   return {
     chatTriggerService,
+    servers,
     /** Past the replay window, the way a live line arrives. */
     feed: (line: string) => {
       now += 5_000;
@@ -171,6 +176,62 @@ describe('ChatTriggerService', () => {
     await flush();
 
     expect(rconSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('watches a server that has never had a schedule saved', async () => {
+    // getSchedule defaults chatEnabled to true for a server with no row, so
+    // the panel shows chat backups as enabled — the watcher must agree.
+    const { chatTriggerService, subscribe, feed, createBackup } = makeHarness();
+
+    await chatTriggerService.onModuleInit();
+
+    expect(subscribe).toHaveBeenCalledWith(
+      's1',
+      expect.any(Function),
+      expect.any(Function),
+    );
+    feed(OP_LINE);
+    await flush();
+    expect(createBackup).toHaveBeenCalledTimes(1);
+  });
+
+  it('picks up a server created after the panel booted', async () => {
+    const servers: Array<{ id: string }> = [];
+    const { chatTriggerService, subscribe } = makeHarness(
+      '[{"name":"Steve"}]',
+      servers,
+    );
+    await chatTriggerService.onModuleInit();
+    expect(subscribe).not.toHaveBeenCalled();
+
+    servers.push({ id: 's2' });
+    await chatTriggerService.sweep();
+
+    expect(subscribe).toHaveBeenCalledWith(
+      's2',
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it('stops watching a server whose chat trigger was turned off', async () => {
+    const { chatTriggerService, subscribe } = makeHarness();
+    const schedule = { chatEnabled: true, skipWhenEmpty: true };
+    (
+      chatTriggerService as unknown as {
+        backupRepository: { getSchedule: jest.Mock };
+      }
+    ).backupRepository.getSchedule.mockImplementation(async () => schedule);
+
+    await chatTriggerService.onModuleInit();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+
+    schedule.chatEnabled = false;
+    await chatTriggerService.sweep();
+    schedule.chatEnabled = true;
+    await chatTriggerService.sweep();
+
+    expect(subscribe).toHaveBeenCalledTimes(2); // released, then re-attached
   });
 });
 

@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { LogStreamService } from '../console/log-stream.service';
 import { RconService } from '../console/rcon.service';
 import { DockerService } from '../servers/docker.service';
+import { ServersService } from '../servers/servers.service';
 import { BackupService } from './backup.service';
 import { BackupRepository } from './backup.repository';
 import { isJoinLine, parseChatCommand } from './chat-command';
@@ -23,8 +24,12 @@ const REFUSAL_THROTTLE_MS = 60 * 1000;
  * after attaching; replayed lines all arrive in the first burst.
  */
 const REPLAY_GRACE_MS = 2 * 1000;
-/** How often to retry servers that should be watched but are not attached. */
-const RETRY_EVERY_MS = 60 * 1000;
+/**
+ * How often to re-read which servers want a chat watcher and (re)attach the
+ * ones that are not listening — covers servers created since boot, containers
+ * that were down, and streams that ended on a restart.
+ */
+const SWEEP_EVERY_MS = 60 * 1000;
 
 @Injectable()
 export class ChatTriggerService implements OnModuleInit, OnModuleDestroy {
@@ -45,24 +50,51 @@ export class ChatTriggerService implements OnModuleInit, OnModuleDestroy {
     private readonly backupService: BackupService,
     private readonly backupRepository: BackupRepository,
     private readonly dockerService: DockerService,
+    private readonly serversService: ServersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    for (const schedule of await this.backupRepository.listSchedules()) {
-      if (schedule.chatEnabled) {
-        await this.watch(schedule.serverId).catch((error) =>
-          this.logger.warn(
-            `chat trigger not attached for ${schedule.serverId}: ${String(error)}`,
-          ),
-        );
-      }
+    await this.sweep();
+    this.retryTimer = setInterval(() => void this.sweep(), SWEEP_EVERY_MS);
+  }
+
+  /**
+   * Reconcile the watch set with reality: every server whose *effective*
+   * schedule has `chatEnabled` gets a listener. Reading each schedule through
+   * the repository is what makes the default (`chatEnabled: true` for a server
+   * that never saved one) authoritative — enumerating saved `BackupSchedule`
+   * rows instead silently skips every server that has never opened the
+   * schedule form, while the panel shows chat backups as enabled.
+   *
+   * Re-running on a timer also covers servers created since boot, containers
+   * that were stopped, and streams that ended on a restart.
+   */
+  async sweep(): Promise<void> {
+    const servers = await this.serversService.listServers().catch((error) => {
+      this.logger.warn(`chat trigger sweep failed: ${String(error)}`);
+      return [] as Array<{ id: string }>;
+    });
+    const live = new Set(servers.map((server) => server.id));
+
+    for (const serverId of [...this.wanted]) {
+      if (!live.has(serverId)) this.unwatch(serverId); // server was deleted
     }
-    // A stopped container has no log stream, and a running one loses its
-    // stream on every restart; retry so !backup does not die with it.
-    this.retryTimer = setInterval(
-      () => void this.retryWanted(),
-      RETRY_EVERY_MS,
-    );
+
+    for (const server of servers) {
+      const schedule = await this.backupRepository.getSchedule(server.id);
+      if (!schedule.chatEnabled) {
+        this.unwatch(server.id);
+        continue;
+      }
+      this.wanted.add(server.id);
+      if (this.releases.has(server.id)) continue;
+      await this.attach(server.id).catch((error) =>
+        // A stopped container has no log stream; the next sweep retries.
+        this.logger.debug(
+          `chat trigger not attached for ${server.id}: ${String(error)}`,
+        ),
+      );
+    }
   }
 
   onModuleDestroy(): void {
@@ -106,13 +138,6 @@ export class ChatTriggerService implements OnModuleInit, OnModuleDestroy {
   private onStreamEnd(serverId: string): void {
     this.releases.delete(serverId);
     this.attachedAt.delete(serverId);
-  }
-
-  private async retryWanted(): Promise<void> {
-    for (const serverId of this.wanted) {
-      if (this.releases.has(serverId)) continue;
-      await this.attach(serverId).catch(() => undefined); // container still down
-    }
   }
 
   /** Has anyone been on since the last backup? Used by skipWhenEmpty. */
