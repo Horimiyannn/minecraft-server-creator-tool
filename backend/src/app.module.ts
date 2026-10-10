@@ -9,6 +9,7 @@ import { VersionsModule } from './versions/versions.module';
 import { ConsoleModule } from './console/console.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { FilesModule } from './files/files.module';
+import { BackupsModule } from './backups/backups.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FilesModule } from './files/files.module';
     ConsoleModule,
     MetricsModule,
     FilesModule,
+    BackupsModule,
   ],
 })
 export class AppModule {}
