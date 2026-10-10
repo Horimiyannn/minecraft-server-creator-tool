@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   BackupKind,
@@ -159,6 +159,83 @@ export class BackupService {
     for (const row of rows.slice(0, Math.max(0, rows.length - keep))) {
       await rm(row.path, { force: true }).catch(() => undefined);
       await this.backupRepository.delete(row.id).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Panel-only: restore stops the server, replaces files, and restarts it if
+   * it was running. A full restore moves the live data dir aside instead of
+   * deleting it, so a failed extraction can be rolled back — that rename is
+   * the undo, which is why restore needs no pre-snapshot of its own.
+   */
+  async restore(serverId: string, backupId: string): Promise<void> {
+    await this.serversService.assertServerExists(serverId);
+    if (this.running.has(serverId)) {
+      throw new ConflictException(
+        'a backup is already running for this server',
+      );
+    }
+    this.running.add(serverId);
+    try {
+      const record = await this.requireBackup(serverId, backupId);
+      const wasRunning = await this.isRunning(serverId);
+      if (wasRunning) await this.serversService.stop(serverId);
+      try {
+        if (record.kind === 'full') {
+          await this.restoreFull(serverId, record.path);
+        } else {
+          await this.restoreWorld(serverId, record.path);
+        }
+      } finally {
+        if (wasRunning) await this.serversService.start(serverId);
+      }
+    } finally {
+      this.running.delete(serverId);
+    }
+  }
+
+  private async restoreFull(serverId: string, archive: string): Promise<void> {
+    const dataDir = this.dockerService.dataDir(serverId);
+    const aside = `${dataDir}.restoring-${Date.now()}`;
+    await rename(dataDir, aside);
+    await mkdir(dataDir, { recursive: true });
+    try {
+      await this.tarService.extract({ archive, dest: dataDir });
+    } catch (error) {
+      await rm(dataDir, { recursive: true, force: true });
+      await rename(aside, dataDir);
+      throw error;
+    }
+    await rm(aside, { recursive: true, force: true });
+  }
+
+  /** World restore replaces the dimension folders in place, nothing else. */
+  private async restoreWorld(serverId: string, archive: string): Promise<void> {
+    const dataDir = this.dockerService.dataDir(serverId);
+    const properties = await readFile(
+      path.join(dataDir, 'server.properties'),
+      'utf8',
+    ).catch(() => '');
+    const existing = await readdir(dataDir).catch(() => [] as string[]);
+    const dirs = worldDirs(levelName(properties), existing);
+    const aside = new Map<string, string>();
+    for (const dir of dirs) {
+      const from = path.join(dataDir, dir);
+      const to = `${from}.restoring-${Date.now()}`;
+      await rename(from, to);
+      aside.set(from, to);
+    }
+    try {
+      await this.tarService.extract({ archive, dest: dataDir });
+    } catch (error) {
+      for (const [from, to] of aside) {
+        await rm(from, { recursive: true, force: true });
+        await rename(to, from);
+      }
+      throw error;
+    }
+    for (const to of aside.values()) {
+      await rm(to, { recursive: true, force: true });
     }
   }
 
