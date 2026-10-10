@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -11,10 +11,13 @@ interface Harness {
   tarCreate: jest.Mock;
   created: unknown[];
   deleted: string[];
-  serverRoot: string;
+  serverRoot: () => string;
 }
 
-function makeHarness(overrides: Record<string, unknown> = {}): Harness {
+function makeHarness(
+  overrides: Record<string, unknown> = {},
+  serversOverrides: Record<string, unknown> = {},
+): Harness {
   const created: unknown[] = [];
   const deleted: string[] = [];
   const rconSend = jest.fn().mockResolvedValue('ok');
@@ -54,6 +57,7 @@ function makeHarness(overrides: Record<string, unknown> = {}): Harness {
       assertServerExists: jest.fn().mockResolvedValue(undefined),
       resolveContainerId: jest.fn().mockResolvedValue('c1'),
       getServer: jest.fn().mockResolvedValue({ id: 's1', status: 'running' }),
+      ...serversOverrides,
     } as never,
     {
       dataDir: () => path.join(serverRoot, 'data'),
@@ -64,7 +68,14 @@ function makeHarness(overrides: Record<string, unknown> = {}): Harness {
     } as never,
     { send: rconSend } as never,
   );
-  return { backupService, rconSend, tarCreate, created, deleted, serverRoot };
+  return {
+    backupService,
+    rconSend,
+    tarCreate,
+    created,
+    deleted,
+    serverRoot: () => serverRoot,
+  };
 }
 
 describe('BackupService.create', () => {
@@ -146,5 +157,72 @@ describe('BackupService.create', () => {
     await backupService.create('s1', 'full', 'manual');
 
     expect(rconSend).not.toHaveBeenCalled();
+  });
+
+  it('re-enables saving when the save-off call itself fails mid-flight', async () => {
+    // RconService rejects after the server already ran the command (read
+    // timeout, dropped reply) — saves would stay off forever.
+    const { backupService, rconSend } = makeHarness();
+    rconSend.mockRejectedValueOnce(new Error('rcon timeout'));
+
+    await expect(backupService.create('s1', 'full', 'manual')).rejects.toThrow(
+      'rcon timeout',
+    );
+
+    expect(rconSend.mock.calls.map((c) => c[1])).toContain('save-on');
+  });
+
+  it('re-enables saving for an in-flight backup when the panel shuts down', async () => {
+    const { backupService, rconSend, tarCreate } = makeHarness();
+    let release: () => void = () => undefined;
+    tarCreate.mockImplementation(
+      (opts: CreateTarOptions) =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            writeFileSync(opts.dest, 'ARCHIVE');
+            resolve();
+          };
+        }),
+    );
+
+    const inFlight = backupService.create('s1', 'full', 'manual');
+    while (tarCreate.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await backupService.onApplicationShutdown();
+
+    expect(rconSend.mock.calls.map((c) => c[1])).toContain('save-on');
+    release();
+    await inFlight;
+  });
+});
+
+describe('BackupService.pathFor', () => {
+  it('404s when the row outlived its archive', async () => {
+    const { backupService } = makeHarness({
+      findById: jest.fn().mockResolvedValue({
+        id: 'b1',
+        serverId: 's1',
+        kind: 'full',
+        path: path.join(tmpdir(), 'mcbackup-gone', 'gone.tar.zst'),
+      }),
+    });
+
+    await expect(backupService.pathFor('s1', 'b1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+});
+
+describe('BackupService.list', () => {
+  it('rejects an unknown server instead of answering with an empty list', async () => {
+    const assertServerExists = jest
+      .fn()
+      .mockRejectedValue(new NotFoundException('Server "nope" not found'));
+    const { backupService } = makeHarness({}, { assertServerExists });
+
+    await expect(backupService.list('nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

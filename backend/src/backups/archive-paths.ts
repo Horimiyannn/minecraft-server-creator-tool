@@ -15,6 +15,17 @@ export const FULL_EXCLUDES = [
   './*.jar',
 ];
 
+/**
+ * A level name becomes a path handed to `tar` and a directory we rename, and
+ * anything running in the container can write `server.properties`. Keep it to
+ * a plain directory name: no separators, no leading dash, no dot-dot.
+ */
+const SAFE_DIR = /^[A-Za-z0-9][A-Za-z0-9._ -]*$/;
+
+export function isSafeDirName(name: string): boolean {
+  return SAFE_DIR.test(name) && !name.includes('..');
+}
+
 export function levelName(serverProperties: string): string {
   for (const line of serverProperties.split('\n')) {
     const trimmed = line.trim();

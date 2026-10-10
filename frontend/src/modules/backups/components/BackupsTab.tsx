@@ -40,12 +40,19 @@ export function BackupsTab({ serverId }: { serverId: string }) {
       {create.isError && (
         <p className="text-red-400">{errorText(create.error)}</p>
       )}
+      {actions.restore.isError && (
+        <p className="text-red-400">{errorText(actions.restore.error)}</p>
+      )}
+      {actions.remove.isError && (
+        <p className="text-red-400">{errorText(actions.remove.error)}</p>
+      )}
       {isLoading && <Spinner />}
       {isError && <p className="text-red-400">{errorText(error)}</p>}
       {backups && (
         <BackupList
           backups={backups}
           serverId={serverId}
+          busy={actions.restore.isPending || actions.remove.isPending}
           onRestore={setRestoring}
           onDelete={setDeleting}
         />

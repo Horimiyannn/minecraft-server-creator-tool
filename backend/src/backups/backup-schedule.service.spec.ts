@@ -1,9 +1,12 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BackupScheduleService } from './backup-schedule.service';
 
 jest.useFakeTimers();
 
-function makeHarness(schedule: Record<string, unknown> = {}) {
+function makeHarness(
+  schedule: Record<string, unknown> = {},
+  serversOverrides: Record<string, unknown> = {},
+) {
   const createBackup = jest.fn().mockResolvedValue({ id: 'b1', sizeBytes: 1n });
   const rconSend = jest
     .fn()
@@ -41,6 +44,10 @@ function makeHarness(schedule: Record<string, unknown> = {}) {
       }),
       watch: jest.fn(),
       unwatch: jest.fn(),
+    } as never,
+    {
+      assertServerExists: jest.fn().mockResolvedValue(undefined),
+      ...serversOverrides,
     } as never,
   );
 
@@ -111,6 +118,25 @@ describe('BackupScheduleService', () => {
         chatEnabled: true,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('404s for an unknown server instead of inventing default values', async () => {
+    const notFound = jest
+      .fn()
+      .mockRejectedValue(new NotFoundException('Server "nope" not found'));
+    const { service } = makeHarness({}, { assertServerExists: notFound });
+
+    await expect(service.get('nope')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.save('nope', {
+        worldEveryMin: null,
+        fullEveryMin: null,
+        keepWorld: 3,
+        keepFull: 2,
+        skipWhenEmpty: true,
+        chatEnabled: true,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

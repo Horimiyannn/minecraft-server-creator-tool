@@ -1,11 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DockerService } from '../servers/docker.service';
 import { ServersService } from '../servers/servers.service';
+
+interface Listener {
+  onLine: (line: string) => void;
+  onEnd?: () => void;
+}
 
 interface LogStream {
   stream: NodeJS.ReadableStream;
   buffer: string;
-  listeners: Set<(line: string) => void>;
+  listeners: Set<Listener>;
 }
 
 /**
@@ -16,6 +21,7 @@ interface LogStream {
  */
 @Injectable()
 export class LogStreamService {
+  private readonly logger = new Logger(LogStreamService.name);
   private readonly streams = new Map<string, LogStream>();
   private readonly starting = new Map<string, Promise<LogStream>>();
 
@@ -28,18 +34,24 @@ export class LogStreamService {
    * Attach a sink to this server's log stream, creating the docker stream on
    * first use. Returns a release function; the stream is torn down when the
    * last listener releases.
+   *
+   * `onEnd` fires when the docker stream ends on its own — the container was
+   * stopped or restarted. Without it a listener would hold a release handle
+   * for a stream that is already gone and never re-subscribe.
    */
   async subscribe(
     serverId: string,
     onLine: (line: string) => void,
+    onEnd?: () => void,
   ): Promise<() => void> {
     const entry = await this.ensure(serverId);
-    entry.listeners.add(onLine);
+    const listener: Listener = { onLine, onEnd };
+    entry.listeners.add(listener);
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      entry.listeners.delete(onLine);
+      entry.listeners.delete(listener);
       if (entry.listeners.size === 0) this.teardown(serverId, entry);
     };
   }
@@ -78,16 +90,36 @@ export class LogStreamService {
     entry.buffer = lines.pop() ?? '';
     for (const line of lines) {
       const clean = line.replace(/\r$/, '');
-      for (const listener of entry.listeners) listener(clean);
+      this.emit(entry, clean);
+    }
+  }
+
+  /** One listener throwing must not starve the ones after it. */
+  private emit(entry: LogStream, line: string): void {
+    for (const listener of entry.listeners) {
+      try {
+        listener.onLine(line);
+      } catch (error) {
+        this.logger.warn(`log listener threw: ${String(error)}`);
+      }
     }
   }
 
   private finish(serverId: string, entry: LogStream): void {
     if (this.streams.get(serverId) !== entry) return; // superseded — ignore
     if (entry.buffer) {
-      const clean = entry.buffer.replace(/\r$/, ''); // flush tail
-      for (const listener of entry.listeners) listener(clean);
+      this.emit(entry, entry.buffer.replace(/\r$/, '')); // flush tail
+      entry.buffer = '';
     }
     this.streams.delete(serverId);
+    const listeners = [...entry.listeners];
+    entry.listeners.clear(); // release handles must not keep sinks alive
+    for (const listener of listeners) {
+      try {
+        listener.onEnd?.();
+      } catch (error) {
+        this.logger.warn(`log end handler threw: ${String(error)}`);
+      }
+    }
   }
 }

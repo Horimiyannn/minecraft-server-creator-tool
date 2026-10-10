@@ -8,8 +8,14 @@ function makeGateway() {
     authenticate: jest.fn().mockReturnValue({ sub: 1, username: 'admin' }),
   } as unknown as jest.Mocked<SocketAuthService>;
   const release = jest.fn();
+  const ends: Array<() => void> = [];
   const logStreamService = {
-    subscribe: jest.fn().mockResolvedValue(release),
+    subscribe: jest.fn(
+      async (_id: string, _onLine: () => void, onEnd?: () => void) => {
+        if (onEnd) ends.push(onEnd);
+        return release;
+      },
+    ),
   } as unknown as jest.Mocked<LogStreamService>;
   const rconService = {
     send: jest.fn().mockResolvedValue('cmd-output'),
@@ -29,6 +35,7 @@ function makeGateway() {
     gateway,
     logStreamService,
     release,
+    ends,
     rconService,
     emit,
     rooms,
@@ -66,6 +73,7 @@ describe('ConsoleGateway', () => {
     expect(client.join).toHaveBeenCalledWith('server:srv1');
     expect(logStreamService.subscribe).toHaveBeenCalledWith(
       'srv1',
+      expect.any(Function),
       expect.any(Function),
     );
     const sink = logStreamService.subscribe.mock.calls[0][1];
@@ -111,5 +119,18 @@ describe('ConsoleGateway', () => {
     await gateway.leave(client as never, { serverId: 'srv1' });
 
     expect(release).toHaveBeenCalled();
+  });
+
+  it('re-subscribes on the next join after the stream ended', async () => {
+    const { gateway, logStreamService, ends, rooms } = makeGateway();
+    const client = fakeClient();
+    rooms.set('server:srv1', new Set(['sock1']));
+    await gateway.join(client as never, { serverId: 'srv1' });
+
+    // The container stopped: the docker stream ended under the gateway.
+    ends.forEach((end) => end());
+    await gateway.join(client as never, { serverId: 'srv1' });
+
+    expect(logStreamService.subscribe).toHaveBeenCalledTimes(2);
   });
 });

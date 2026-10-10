@@ -70,4 +70,43 @@ describe('BackupsTab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Restore now' }));
     await waitFor(() => expect(calls()).toHaveLength(1));
   });
+
+  it('surfaces a failed restore instead of silently doing nothing', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (String(url).includes('/restore')) {
+        return {
+          ok: false,
+          status: 409,
+          text: async () =>
+            JSON.stringify({ message: 'a backup is already running' }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          String(url).includes('schedule')
+            ? JSON.stringify({
+                serverId: 's1',
+                worldEveryMin: 60,
+                fullEveryMin: null,
+                keepWorld: 12,
+                keepFull: 5,
+                skipWhenEmpty: true,
+                chatEnabled: true,
+              })
+            : JSON.stringify([backup]),
+      };
+    });
+
+    renderTab();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Restore' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Restore now' }));
+
+    expect(
+      await screen.findByText(/a backup is already running/i),
+    ).toBeInTheDocument();
+  });
 });

@@ -5,16 +5,16 @@ import { BackupService } from './backup.service';
 import { TarService } from './tar.service';
 
 describe('BackupService.restore', () => {
-  async function setup(kind: 'world' | 'full') {
+  async function setup(kind: 'world' | 'full', levelName = 'world') {
     const root = await mkdtemp(path.join(tmpdir(), 'mcrestore-'));
     const dataDir = path.join(root, 's1', 'data');
     const backupsDir = path.join(root, 's1', 'backups');
-    await mkdir(path.join(dataDir, 'world'), { recursive: true });
+    await mkdir(path.join(dataDir, levelName), { recursive: true });
     await mkdir(backupsDir, { recursive: true });
-    await writeFile(path.join(dataDir, 'world/level.dat'), 'OLD');
+    await writeFile(path.join(dataDir, `${levelName}/level.dat`), 'OLD');
     await writeFile(
       path.join(dataDir, 'server.properties'),
-      'level-name=world',
+      `level-name=${levelName}`,
     );
 
     // A real archive holding the "good" world.
@@ -103,6 +103,33 @@ describe('BackupService.restore', () => {
     );
     expect(await readFile(path.join(dataDir, 'world/level.dat'), 'utf8')).toBe(
       'OLD',
+    );
+  });
+
+  it('refuses a world restore whose archive does not hold the live level', async () => {
+    // level-name was changed to "survival" after this backup was taken; the
+    // archive still holds "world/". Deleting the moved-aside survival copy
+    // would lose the live world and report success.
+    const { backupService, dataDir } = await setup('world', 'survival');
+
+    await expect(backupService.restore('s1', 'b1')).rejects.toThrow(/survival/);
+
+    expect(
+      await readFile(path.join(dataDir, 'survival/level.dat'), 'utf8'),
+    ).toBe('OLD');
+    const left = await readdir(dataDir);
+    expect(left.filter((name) => name.includes('.restoring-'))).toEqual([]);
+  });
+
+  it('rejects a level-name that is not a safe directory name', async () => {
+    const { backupService, dataDir } = await setup('world');
+    await writeFile(
+      path.join(dataDir, 'server.properties'),
+      'level-name=--exclude=*',
+    );
+
+    await expect(backupService.restore('s1', 'b1')).rejects.toThrow(
+      /level-name/,
     );
   });
 });

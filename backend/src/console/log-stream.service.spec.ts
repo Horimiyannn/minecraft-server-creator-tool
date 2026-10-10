@@ -106,4 +106,35 @@ describe('LogStreamService', () => {
     release();
     expect(destroyed()).toBe(true);
   });
+
+  it('tells listeners when the stream ends so they can re-subscribe', async () => {
+    const { logStreamService, stream, dockerService } = makeService();
+    const ended: string[] = [];
+    await logStreamService.subscribe(
+      's1',
+      () => undefined,
+      () => ended.push('end'),
+    );
+
+    stream.push(null);
+    await flush();
+
+    expect(ended).toEqual(['end']);
+    // The entry is gone, so the next subscribe opens a fresh docker stream.
+    await logStreamService.subscribe('s1', () => undefined);
+    expect(dockerService.logs).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps one listener failure from starving the others', async () => {
+    const { logStreamService, emit } = makeService();
+    const seen: string[] = [];
+    await logStreamService.subscribe('s1', () => {
+      throw new Error('listener blew up');
+    });
+    await logStreamService.subscribe('s1', (line) => seen.push(line));
+
+    emit('hello\n');
+
+    expect(seen).toEqual(['hello']);
+  });
 });

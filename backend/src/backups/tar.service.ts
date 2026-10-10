@@ -29,6 +29,9 @@ export class TarService {
       opts.dest,
       '-C',
       opts.cwd,
+      // `--` or a path the container chose ("--exclude=*", "--files-from=…")
+      // would be parsed as a tar option instead of a path.
+      '--',
       ...opts.paths,
     ];
     return run('tar', args);
@@ -48,7 +51,10 @@ function run(command: string, args: string[]): Promise<void> {
     });
     child.on('error', reject);
     child.on('close', (code) =>
-      code === 0
+      // tar exits 1 for "file changed as we read it" / "File removed before we
+      // read it" — routine on a live server, where only world chunk writes are
+      // frozen. The archive is complete; fatal errors are 2 and up.
+      code === 0 || code === 1
         ? resolve()
         : reject(new Error(`${command} exited ${code}: ${stderr.trim()}`)),
     );

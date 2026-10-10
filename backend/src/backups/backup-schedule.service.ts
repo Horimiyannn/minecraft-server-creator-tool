@@ -14,6 +14,7 @@ import {
 import { BackupService } from './backup.service';
 import { RconService } from '../console/rcon.service';
 import { ChatTriggerService } from './chat-trigger.service';
+import { ServersService } from '../servers/servers.service';
 import { parsePlayerCount } from './chat-command';
 
 /** Below this, a tar of a large world can outlast its own interval. */
@@ -30,6 +31,7 @@ export class BackupScheduleService implements OnModuleInit, OnModuleDestroy {
     private readonly backupService: BackupService,
     private readonly rconService: RconService,
     private readonly chatTriggerService: ChatTriggerService,
+    private readonly serversService: ServersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -43,7 +45,10 @@ export class BackupScheduleService implements OnModuleInit, OnModuleDestroy {
     this.timers.clear();
   }
 
-  get(serverId: string): Promise<ScheduleRecord> {
+  async get(serverId: string): Promise<ScheduleRecord> {
+    // Without this an unknown id answers 200 with invented defaults, and a
+    // save answers 500 from the foreign-key violation.
+    await this.serversService.assertServerExists(serverId);
     return this.backupRepository.getSchedule(serverId);
   }
 
@@ -51,6 +56,7 @@ export class BackupScheduleService implements OnModuleInit, OnModuleDestroy {
     serverId: string,
     update: ScheduleUpdate,
   ): Promise<ScheduleRecord> {
+    await this.serversService.assertServerExists(serverId);
     validate(update);
     const saved = await this.backupRepository.upsertSchedule(serverId, update);
     this.register(saved);

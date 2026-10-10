@@ -54,6 +54,9 @@ export class ConsoleGateway implements OnGatewayConnection {
           this.server
             .to(room)
             .emit('log', { serverId: payload.serverId, line }),
+        // The container stopped: drop the dead handle so the next join opens
+        // a fresh stream instead of reusing one that has already ended.
+        () => this.releases.delete(payload.serverId),
       );
       this.releases.set(payload.serverId, release);
     }

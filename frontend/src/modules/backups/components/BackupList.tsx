@@ -24,11 +24,14 @@ function age(iso: string): string {
 export function BackupList({
   backups,
   serverId,
+  busy = false,
   onRestore,
   onDelete,
 }: {
   backups: Backup[];
   serverId: string;
+  /** A restore or delete is in flight: a second click would 409. */
+  busy?: boolean;
   onRestore: (backup: Backup) => void;
   onDelete: (backup: Backup) => void;
 }) {
@@ -66,10 +69,18 @@ export function BackupList({
               >
                 Download
               </a>
-              <Button variant="ghost" onClick={() => onRestore(backup)}>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => onRestore(backup)}
+              >
                 Restore
               </Button>
-              <Button variant="ghost" onClick={() => onDelete(backup)}>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => onDelete(backup)}
+              >
                 Delete
               </Button>
             </td>
