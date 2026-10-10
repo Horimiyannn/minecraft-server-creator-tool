@@ -21,7 +21,8 @@ export function MetricsTab({ serverId }: { serverId: string }) {
         label="Memory"
         value={`${stats.memUsedMb} / ${stats.memLimitMb} MB`}
       />
-      <Metric label="Disk" value={`${stats.diskMb} MB`} />
+      <Metric label="Data" value={`${stats.diskMb} MB`} />
+      <Metric label="Backups" value={`${stats.backupsMb} MB`} />
     </div>
   );
 }

@@ -60,3 +60,39 @@ export async function mockFiles(page: Page) {
     r.fulfill({ json: { content: 'level-name=world', mtimeMs: 1 } }),
   );
 }
+
+const backup = {
+  id: 'b1',
+  serverId: 's1',
+  kind: 'world',
+  trigger: 'manual',
+  label: null,
+  sizeBytes: 3 * 1024 * 1024,
+  createdAt: new Date(0).toISOString(),
+};
+
+// Backups-tab routes. Registered after mockBackend, so these win (Playwright
+// matches newest-first). The schedule glob goes last for the same reason.
+export async function mockBackups(page: Page) {
+  await page.route('http://localhost:3001/servers/s1', (r) =>
+    r.fulfill({ json: { ...server, live: null } }),
+  );
+  await page.route('**/servers/s1/backups', (r) =>
+    r.request().method() === 'POST'
+      ? r.fulfill({ json: { ...backup, id: 'b2', kind: 'full' } })
+      : r.fulfill({ json: [backup] }),
+  );
+  await page.route('**/servers/s1/backups/schedule', (r) =>
+    r.fulfill({
+      json: {
+        serverId: 's1',
+        worldEveryMin: 60,
+        fullEveryMin: null,
+        keepWorld: 12,
+        keepFull: 5,
+        skipWhenEmpty: true,
+        chatEnabled: true,
+      },
+    }),
+  );
+}

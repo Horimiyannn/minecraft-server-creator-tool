@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockBackend, mockFiles } from './mocks';
+import { mockBackend, mockBackups, mockFiles } from './mocks';
 
 test.beforeEach(async ({ page }) => {
   await mockBackend(page);
@@ -61,7 +61,10 @@ test('edits a config file from the Files tab', async ({ page }) => {
 
   await page.goto('/servers/s1');
   await page.getByRole('tab', { name: 'Files' }).click();
-  await page.getByRole('button', { name: 'server.properties' }).click();
+  // exact: the row also has "Rename server.properties" / "Delete …" buttons.
+  await page
+    .getByRole('button', { name: 'server.properties', exact: true })
+    .click();
   const editor = page.getByRole('textbox', { name: 'server.properties' });
   await expect(editor).toHaveValue('level-name=world');
   await editor.fill('level-name=new');
@@ -72,4 +75,25 @@ test('edits a config file from the Files tab', async ({ page }) => {
     .toEqual([
       { path: 'server.properties', content: 'level-name=new', mtimeMs: 1 },
     ]);
+});
+
+test('restores a backup only after confirming', async ({ page }) => {
+  await mockBackups(page);
+  const restores: string[] = [];
+  await page.route('**/servers/s1/backups/*/restore', (r) => {
+    restores.push(r.request().url());
+    return r.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto('/servers/s1');
+  await page.getByRole('tab', { name: 'Backups' }).click();
+  await expect(page.getByText('3.0 MB')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Restore' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Restore this backup?' });
+  await expect(dialog).toBeVisible();
+  expect(restores).toEqual([]);
+
+  await dialog.getByRole('button', { name: 'Restore now' }).click();
+  await expect.poll(() => restores.length).toBe(1);
 });

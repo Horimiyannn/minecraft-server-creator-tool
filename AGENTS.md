@@ -88,6 +88,11 @@ Never commit `.env`.
 Do not bypass these with `--no-verify`. If a hook fails, fix the underlying
 code — don't skip the gate.
 
+## Commits
+
+Never add `Co-Authored-By:` trailers (or any other AI attribution such as
+`Claude-Session:` lines) to commit messages.
+
 ## fallow
 
 `fallow` (dead-code + duplicate-code analysis) is configured at repo root via
@@ -110,6 +115,10 @@ cross-origin with `credentials:'include'` (backend `enableCors`).
   not in pre-push).
 - Env: `NEXT_PUBLIC_API_URL` (default `http://localhost:3001`). Backend needs
   `FRONTEND_ORIGIN` (default `http://localhost:3000`).
+- `src/modules/backups` — the server Backups tab: list by kind with trigger
+  badges, create world/full snapshots, download, delete, restore (behind a
+  confirm dialog), and the interval/retention/chat schedule form over
+  `/servers/:id/backups`.
 - `src/modules/files` — the server Files tab: browse, edit (mtime conflict
   → 409 warning), upload/download, bulk delete, search, zip extract/compress
   over `/servers/:id/files`.

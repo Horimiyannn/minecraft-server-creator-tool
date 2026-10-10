@@ -55,6 +55,7 @@ const sample = (serverId: string): ServerStats => ({
   memUsedMb: 100,
   memLimitMb: 2048,
   diskMb: 5,
+  backupsMb: 2,
 });
 
 describe('subscribeStats', () => {

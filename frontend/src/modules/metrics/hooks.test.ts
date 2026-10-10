@@ -26,6 +26,7 @@ describe('useServerStats', () => {
         memUsedMb: 300,
         memLimitMb: 2048,
         diskMb: 12,
+        backupsMb: 4,
       });
     });
     await waitFor(() => expect(result.current?.cpuPct).toBe(40));

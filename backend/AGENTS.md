@@ -44,6 +44,21 @@ file only adds backend detail on top of that.
     `stagingDir`); deleting a server removes its whole root. Optional env:
     `MAX_UPLOAD_MB` (default 512). `archiver` is pinned to v7 — v8 dropped the
     `archiver('zip')` factory.
+- `backups/` — `BackupsController` (guarded REST, `/servers/:id/backups`) →
+  `BackupService` → `BackupRepository` (Prisma) + `TarService` (the ONLY place
+  `child_process` is used). Two kinds (`world`, `full`), three triggers
+  (`manual`, `chat`, `schedule`). Every create runs `save-off` →
+  `save-all flush` → tar → `save-on`, with `save-on` in a `finally`, behind a
+  per-server single-flight lock. `ChatTriggerService` listens on
+  `LogStreamService` (now multi-sink: `subscribe` returns a release fn) and
+  answers over RCON `tellraw`; chat may run `!backup` only, ops only
+  (`ops.json` re-read per command), rate-limited per player.
+  `BackupScheduleService` holds plain `setInterval` timers (no scheduling
+  dependency); `skipWhenEmpty` skips only when nobody is online AND nobody has
+  been seen since the last backup. Archives live at
+  `<MC_DATA_ROOT>/<id>/backups`, outside the container mount, so nothing
+  running in the server can delete them. Pure logic is in `archive-paths.ts`
+  and `chat-command.ts`.
 - Both gateways authenticate at the socket.io handshake via
   `SocketAuthService` (exported from `auth/`): it reads the `mcp_token` cookie
   and verifies the JWT; unauthenticated sockets are disconnected before any

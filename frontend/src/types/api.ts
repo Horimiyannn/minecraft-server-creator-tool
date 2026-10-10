@@ -30,6 +30,7 @@ export interface ServerStats {
   memUsedMb: number;
   memLimitMb: number;
   diskMb: number;
+  backupsMb: number;
 }
 
 export interface ConsoleLog {
